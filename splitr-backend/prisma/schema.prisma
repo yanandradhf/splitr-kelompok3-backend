@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users model (Mobile Ready)
+model User {
+  userId               String   @id @default(uuid()) @map("user_id")
+  name                 String   @db.VarChar(100)
+  email                String   @unique @db.VarChar(150)
+  phone                String   @unique @db.VarChar(20)
+  bniAccountNumber     String   @unique @map("bni_account_number") @db.VarChar(20)
+  bniBranchCode        String   @map("bni_branch_code") @db.VarChar(10)
+  encryptedPinHash     String?  @map("encrypted_pin_hash") // untuk mobile login
+  isVerified           Boolean  @default(false) @map("is_verified")
+  defaultPaymentMethod String   @default("instant") @map("default_payment_method") @db.VarChar(20) // instant, scheduled
+  autoDebitEnabled     Boolean  @default(false) @map("auto_debit_enabled")
+  fcmToken             String?  @map("fcm_token") // untuk push notifications
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdGroups     Group[]             @relation("GroupCreator")
+  groupMemberships  GroupMember[]
+  hostedBills       Bill[]              @relation("BillHost")
+  userSelections    UserSelection[]
+  payments          Payment[]
+  scheduledPayments ScheduledPayment[]
+  notifications     Notification[]
+  sentInvites       BillInvite[]
+
+  @@map("users")
+}
+
+// Groups model
+model Group {
+  groupId     String   @id @default(uuid()) @map("group_id")
+  creatorId   String   @map("creator_id")
+  groupName   String   @map("group_name") @db.VarChar(100)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator User          @relation("GroupCreator", fields: [creatorId], references: [userId], onDelete: Cascade)
+  members GroupMember[]
+  bills   Bill[]
+
+  @@map("groups")
+}
+
+// Group Members model
+model GroupMember {
+  memberId  String   @id @default(uuid()) @map("member_id")
+  groupId   String   @map("group_id")
+  userId    String   @map("user_id")
+  isCreator Boolean  @default(false) @map("is_creator")
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  // Relations
+  group Group @relation(fields: [groupId], references: [groupId], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+// Bill Categories model
+model BillCategory {
+  categoryId   String   @id @default(uuid()) @map("category_id")
+  categoryName String   @unique @map("category_name") @db.VarChar(50)
+  categoryIcon String?  @map("category_icon") @db.VarChar(20) // 🍽️, 🥤, 🎬, 🚗, 📦
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  bills Bill[]
+
+  @@map("bill_categories")
+}
+
+// Bills model
+model Bill {
+  billId                String    @id @default(uuid()) @map("bill_id")
+  hostId                String    @map("host_id")
+  groupId               String?   @map("group_id")
+  categoryId            String?   @map("category_id")
+  billName              String    @map("bill_name") @db.VarChar(200)
+  billCode              String?   @unique @map("bill_code") @db.VarChar(8) // untuk join session
+  receiptImageUrl       String?   @map("receipt_image_url")
+  totalAmount           Decimal   @default(0) @map("total_amount") @db.Decimal(12, 2)
+  maxPaymentDate        DateTime? @map("max_payment_date")
+  allowScheduledPayment Boolean   @default(true) @map("allow_scheduled_payment")
+  status                String    @default("active") @db.VarChar(20) // active, completed, cancelled, expired
+  currency              String    @default("IDR") @db.VarChar(3)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  host              User               @relation("BillHost", fields: [hostId], references: [userId], onDelete: Cascade)
+  group             Group?             @relation(fields: [groupId], references: [groupId], onDelete: SetNull)
+  category          BillCategory?      @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
+  billItems         BillItem[]
+  userSelections    UserSelection[]
+  payments          Payment[]
+  scheduledPayments ScheduledPayment[]
+  billInvites       BillInvite[]
+  notifications     Notification[]
+
+  @@map("bills")
+}
+
+// Bill Items model
+model BillItem {
+  itemId        String   @id @default(uuid()) @map("item_id")
+  billId        String   @map("bill_id")
+  itemName      String   @map("item_name") @db.VarChar(200)
+  price         Decimal  @db.Decimal(10, 2)
+  quantity      Int      @default(1)
+  category      String?  @db.VarChar(50) // food_item, beverage_item, service, tax
+  ocrConfidence Decimal? @map("ocr_confidence") @db.Decimal(3, 2) // 0.00 - 1.00
+  isVerified    Boolean  @default(false) @map("is_verified") // user verified OCR result
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  bill           Bill            @relation(fields: [billId], references: [billId], onDelete: Cascade)
+  userSelections UserSelection[]
+
+  @@map("bill_items")
+}
+
+// User Selections model
+model UserSelection {
+  selectionId      String   @id @default(uuid()) @map("selection_id")
+  billId           String   @map("bill_id")
+  userId           String   @map("user_id")
+  itemId           String   @map("item_id")
+  quantitySelected Int      @map("quantity_selected")
+  subtotal         Decimal  @db.Decimal(10, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  bill Bill     @relation(fields: [billId], references: [billId], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  item BillItem @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@unique([billId, userId, itemId])
+  @@map("user_selections")
+}
+
+// Payments model
+model Payment {
+  paymentId          String    @id @default(uuid()) @map("payment_id")
+  billId             String    @map("bill_id")
+  userId             String    @map("user_id")
+  amount             Decimal   @db.Decimal(10, 2)
+  paymentMethod      String    @default("BNI_TRANSFER") @map("payment_method") @db.VarChar(50)
+  paymentType        String    @default("instant") @map("payment_type") @db.VarChar(20) // instant, scheduled
+  status             String    @default("pending") @db.VarChar(20) // pending, completed, failed, cancelled
+  transactionId      String?   @unique @map("transaction_id") @db.VarChar(100)
+  bniReferenceNumber String?   @map("bni_reference_number") @db.VarChar(50)
+  fromBranch         String?   @map("from_branch") @db.VarChar(10) // untuk geotagging
+  toBranch           String?   @map("to_branch") @db.VarChar(10)   // untuk geotagging
+  paidAt             DateTime? @map("paid_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  bill Bill @relation(fields: [billId], references: [billId], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+// Scheduled Payments model
+model ScheduledPayment {
+  scheduleId      String    @id @default(uuid()) @map("schedule_id")
+  billId          String    @map("bill_id")
+  userId          String    @map("user_id")
+  amount          Decimal   @db.Decimal(10, 2)
+  scheduledDate   DateTime  @map("scheduled_date")
+  status          String    @default("scheduled") @db.VarChar(20) // scheduled, processing, completed, failed, cancelled
+  retryCount      Int       @default(0) @map("retry_count")
+  maxRetry        Int       @default(2) @map("max_retry")
+  pinVerifiedAt   DateTime? @map("pin_verified_at") // kapan PIN dikonfirmasi untuk jadwal
+  lastAttemptAt   DateTime? @map("last_attempt_at")
+  failureReason   String?   @map("failure_reason")
+  transactionId   String?   @map("transaction_id") @db.VarChar(100)
+  fromBranch      String?   @map("from_branch") @db.VarChar(10)
+  toBranch        String?   @map("to_branch") @db.VarChar(10)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  processedAt     DateTime? @map("processed_at")
+
+  // Relations
+  bill Bill @relation(fields: [billId], references: [billId], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@map("scheduled_payments")
+}
+
+// Bill Invites model (untuk mobile join session)
+model BillInvite {
+  inviteId     String    @id @default(uuid()) @map("invite_id")
+  billId       String    @map("bill_id")
+  inviteToken  String    @unique @map("invite_token") @db.VarChar(64)
+  invitedBy    String?   @map("invited_by")
+  status       String    @default("active") @db.VarChar(20) // active, used, expired
+  maxUses      Int       @default(100) @map("max_uses")
+  currentUses  Int       @default(0) @map("current_uses")
+  expiresAt    DateTime? @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  bill    Bill  @relation(fields: [billId], references: [billId], onDelete: Cascade)
+  inviter User? @relation(fields: [invitedBy], references: [userId], onDelete: SetNull)
+
+  @@map("bill_invites")
+}
+
+// Notifications model (simple untuk mobile)
+model Notification {
+  notificationId String    @id @default(uuid()) @map("notification_id")
+  userId         String    @map("user_id")
+  billId         String?   @map("bill_id")
+  type           String    @db.VarChar(50) // payment_reminder, payment_success, payment_failed, bill_complete, follow_up
+  title          String    @db.VarChar(200)
+  message        String
+  isRead         Boolean   @default(false) @map("is_read")
+  sentAt         DateTime? @map("sent_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user User  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  bill Bill? @relation(fields: [billId], references: [billId], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+// BNI Branches model (untuk geotagging analytics)
+model BniBranch {
+  branchId   String   @id @default(uuid()) @map("branch_id")
+  branchCode String   @unique @map("branch_code") @db.VarChar(10)
+  branchName String   @map("branch_name") @db.VarChar(100)
+  city       String   @db.VarChar(50)
+  province   String   @db.VarChar(50)
+  latitude   Decimal? @db.Decimal(10, 8)
+  longitude  Decimal? @db.Decimal(11, 8)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("bni_branches")
+}
+
+// Admin Users model (untuk admin dashboard)
+model AdminUser {
+  adminId      String    @id @default(uuid()) @map("admin_id")
+  username     String    @unique @db.VarChar(50)
+  passwordHash String    @map("password_hash")
+  email        String    @unique @db.VarChar(150)
+  role         String    @default("admin") @db.VarChar(20) // admin, super_admin, viewer
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("admin_users")
+}
