@@ -15,15 +15,15 @@ model User {
   phone                String   @unique @db.VarChar(20)
   bniAccountNumber     String   @unique @map("bni_account_number") @db.VarChar(20)
   bniBranchCode        String   @map("bni_branch_code") @db.VarChar(10)
-  encryptedPinHash     String?  @map("encrypted_pin_hash") // untuk mobile login
+  encryptedPinHash     String   @map("encrypted_pin_hash") // ✅ Changed to required
   isVerified           Boolean  @default(false) @map("is_verified")
-  defaultPaymentMethod String   @default("instant") @map("default_payment_method") @db.VarChar(20) // instant, scheduled
+  defaultPaymentMethod String   @default("instant") @map("default_payment_method") @db.VarChar(20)
   autoDebitEnabled     Boolean  @default(false) @map("auto_debit_enabled")
-  fcmToken             String?  @map("fcm_token") // untuk push notifications
+  fcmToken             String?  @map("fcm_token")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
-  // Relations
+  // Relations (same as before)
   createdGroups     Group[]             @relation("GroupCreator")
   groupMemberships  GroupMember[]
   hostedBills       Bill[]              @relation("BillHost")
@@ -35,7 +35,6 @@ model User {
 
   @@map("users")
 }
-
 // Groups model
 model Group {
   groupId     String   @id @default(uuid()) @map("group_id")

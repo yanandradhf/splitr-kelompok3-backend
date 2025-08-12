@@ -115,6 +115,7 @@ async function main() {
 
   // 4. Create Users (seperti di mockup dashboard)
   console.log("👥 Creating users...");
+  // Update bagian user creation di prisma/seed.js
   const users = await Promise.all([
     prisma.user.create({
       data: {
@@ -123,7 +124,7 @@ async function main() {
         phone: "+6281234567890",
         bniAccountNumber: "1935826578",
         bniBranchCode: "001",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ PIN wajib
         isVerified: true,
       },
     }),
@@ -134,7 +135,7 @@ async function main() {
         phone: "+6281234567891",
         bniAccountNumber: "1978654321",
         bniBranchCode: "002",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ Same PIN untuk testing
         isVerified: true,
       },
     }),
@@ -145,7 +146,7 @@ async function main() {
         phone: "+6281234567892",
         bniAccountNumber: "1954219065",
         bniBranchCode: "001",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ Same PIN
         isVerified: true,
       },
     }),
@@ -156,7 +157,7 @@ async function main() {
         phone: "+6281234567893",
         bniAccountNumber: "1765324215",
         bniBranchCode: "003",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ Same PIN
         isVerified: true,
       },
     }),
@@ -167,7 +168,7 @@ async function main() {
         phone: "+6281234567894",
         bniAccountNumber: "1954219066",
         bniBranchCode: "004",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ Same PIN
         isVerified: true,
       },
     }),
@@ -178,7 +179,7 @@ async function main() {
         phone: "+6281234567895",
         bniAccountNumber: "1423675943",
         bniBranchCode: "005",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ Same PIN
         isVerified: true,
       },
     }),
@@ -189,7 +190,7 @@ async function main() {
         phone: "+6281234567896",
         bniAccountNumber: "1478567892",
         bniBranchCode: "002",
-        encryptedPinHash: await bcrypt.hash("123456", 10),
+        encryptedPinHash: await bcrypt.hash("123456", 10), // ✅ Same PIN
         isVerified: true,
       },
     }),
