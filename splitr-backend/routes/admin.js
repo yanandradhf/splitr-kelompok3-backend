@@ -164,6 +164,165 @@ router.get("/dashboard/summary", async (req, res) => {
   }
 });
 
+router.get("/dashboard/charts/transactions", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const period = parseInt(req.query.period,10);
+
+    // Get today's date range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const weeksData = [];
+
+    // Parallel queries for better performance
+    for (let i = 0; i < period/7; i++) {
+      const weekEndDate = new Date(today);
+      weekEndDate.setDate(weekEndDate.getDate() - 7 * i);
+      const weekStartDate = new Date(weekEndDate);
+      weekStartDate.setDate(weekStartDate.getDate() - 7);
+
+      const [weeklyPayments, weeklyScheduled, weeklySuccessful, weeklyFailed] =
+        await Promise.all([
+          // Today's instant payments
+          prisma.payment.aggregate({
+            where: {
+              createdAt: { gte: weekStartDate, lt: weekEndDate },
+            },
+            _count: { paymentId: true },
+            _sum: { amount: true },
+          }),
+
+          // Today's scheduled payments
+          prisma.scheduledPayment.aggregate({
+            where: {
+              createdAt: { gte: weekStartDate, lt: weekEndDate },
+            },
+            _count: { scheduleId: true },
+            _sum: { amount: true },
+          }),
+
+          // Today's successful transactions
+          prisma.payment.count({
+            where: {
+              createdAt: { gte: weekStartDate, lt: weekEndDate },
+              status: "completed",
+            },
+          }),
+
+          // Today's failed transactions
+          prisma.payment.count({
+            where: {
+              createdAt: { gte: weekStartDate, lt: weekEndDate },
+              status: "failed",
+            },
+          }),
+        ]);
+
+      // Calculate totals
+      const weeklyTransactionCount =
+        (weeklyPayments._count.paymentId || 0) +
+        (weeklyScheduled._count.scheduleId || 0);
+      const weeklyTotalAmount =
+        parseFloat(weeklyPayments._sum.amount || 0) +
+        parseFloat(weeklyScheduled._sum.amount || 0);
+
+      // Calculate success and fail rates
+      const successRate =
+        weeklyTransactionCount > 0
+          ? (weeklySuccessful / weeklyTransactionCount) * 100
+          : 0;
+      const failedRate =
+        weeklyTransactionCount > 0
+          ? (weeklyFailed / weeklyTransactionCount) * 100
+          : 0;
+
+      weeksData.push({
+        week: i+1, // To label weeks from 1 to 4
+        transaction_count: weeklyTransactionCount,
+        amount_split: weeklyTotalAmount,
+        success_rate: parseFloat(successRate.toFixed(1)),
+        failed_rate: parseFloat(failedRate.toFixed(1)),
+      });
+    }
+
+    res.json({
+      weekly_data: weeksData,
+    });
+  } catch (error) {
+    console.error("Dashboard summary error:", error);
+    res.status(500).json({ error: "Failed to fetch dashboard summary" });
+  }
+});
+
+router.get("/dashboard/charts/payment-methods", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+
+    // Group payments by payment method and calculate count and sum of amounts
+    const paymentMethodSummary = await prisma.payment.groupBy({
+      by: ["paymentMethod"], // Grouping payments by the 'paymentMethod' field
+      _count: {
+        paymentId: true, // Count the total number of payments for each method
+      },
+      _sum: {
+        amount: true, // Sum the total amount for each payment method
+      },
+      orderBy: {
+        paymentMethod: "asc", // Optional: Order the results alphabetically by payment method
+      },
+    });
+
+    res.json(paymentMethodSummary);
+  } catch (error) {
+    console.error("Payment method summary error:", error);
+    res.status(500).json({ error: "Failed to fetch payment method summary" });
+  }
+});
+
+router.get("/dashboard/charts/categories", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+
+    // Group payments by payment method and calculate count and sum of amounts
+    const billCategorySummary = await prisma.bill.groupBy({
+      by: ["categoryId"], // Grouping payments by the 'paymentMethod' field
+      _count: {
+        billId: true, // Count the total number of payments for each method
+      },
+      _sum: {
+        totalAmount: true, // Sum the total amount for each payment method
+      },
+    });
+    const categoryIds = billCategorySummary.map(group => group.categoryId).filter(id => id !== null);
+    const categories = await prisma.billCategory.findMany({
+      where: {
+        categoryId: {
+          in: categoryIds,
+        },
+      },
+      select: {
+        categoryId: true,
+        categoryName: true,
+      },
+    });
+
+    // 3. Map the names to the grouped data
+    const categoryNameMap = new Map(categories.map(cat => [cat.categoryId, cat.categoryName]));
+    const billsWithCategoryNames = billCategorySummary.map(group => ({
+      categoryId: group.categoryId,
+      categoryName: categoryNameMap.get(group.categoryId) || "Uncategorized",
+      billCount: group._count.billId,
+      totalAmount: group._sum.totalAmount,
+    }));
+
+    res.json(billsWithCategoryNames);
+  } catch (error) {
+    console.error("Payment method summary error:", error);
+    res.status(500).json({ error: "Failed to fetch payment method summary" });
+  }
+});
+
 router.get("/transactions", async (req, res) => {
   try {
     const prisma = req.prisma;
@@ -180,7 +339,7 @@ router.get("/transactions", async (req, res) => {
       whereClause.status = status;
     }
     if (search && search !== "all") {
-      whereClause.OR = [
+      whereClause.category = [
         {
           user: {
             name: { contains: search, mode: "insensitive" },
@@ -246,6 +405,32 @@ router.get("/transactions/:id", async (req, res) => {
   } catch (error) {
     console.error("Fetch transaction by ID error:", error);
     res.status(500).json({ error: "Failed to fetch transaction" });
+  }
+});
+
+router.get("/analytics/geographic", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+
+    const branchSummary = await prisma.payment.groupBy({
+      by: [ "toBranch"], // Grouping by both fields
+      _count: {
+        paymentId: true, // Count payments in each group
+      },
+      _sum: {
+        amount: true, // Sum the amount for payments in each group
+      },
+      // You can also add orderBy if you want to sort the groups
+      orderBy: [
+        {
+          toBranch: "asc",
+        },
+      ],
+    });
+    res.json(branchSummary);
+  } catch (error) {
+    console.error("Dashboard summary error:", error);
+    res.status(500).json({ error: "Failed to fetch dashboard summary" });
   }
 });
 // ... ALL OTHER ROUTES ...
