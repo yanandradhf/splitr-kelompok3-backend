@@ -164,6 +164,90 @@ router.get("/dashboard/summary", async (req, res) => {
   }
 });
 
+router.get("/transactions", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+
+    // Get pagination parameters from the query string
+    const page = parseInt(req.query.page) || 1; // Default to page 1
+    const limit = parseInt(req.query.limit) || 10; // Default to 10 items per page
+    const skip = (page - 1) * limit;
+    const search = req.query.search || "all"; // Default to 'all'
+    const status = req.query.status;
+
+    const whereClause = {};
+    if (status) {
+      whereClause.status = status;
+    }
+    if (search && search !== "all") {
+      whereClause.OR = [
+        {
+          user: {
+            name: { contains: search, mode: "insensitive" },
+          },
+
+        },
+      ];
+    }
+    // Parallel queries to get paginated data and the total count
+    const [payments, totalCount] = await Promise.all([
+      // Fetch a paginated list of payments
+      prisma.payment.findMany({
+        skip,
+        take: limit,
+        // You can add 'orderBy' and 'select' to control the data returned
+        orderBy: {
+          createdAt: "desc",
+        },
+      }),
+
+      // Get the total number of payments for pagination metadata
+      prisma.payment.count(),
+    ]);
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalCount / limit);
+
+    // Send the paginated data along with metadata
+    res.json({
+      data: payments,
+      meta: {
+        total_items: totalCount,
+        current_page: page,
+        items_per_page: limit,
+        total_pages: totalPages,
+      },
+    });
+  } catch (error) {
+    console.error("API transactions error:", error);
+    res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+});
+
+router.get("/transactions/:id", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const transactionId = req.params.id;
+
+    const transaction = await prisma.payment.findUnique({
+      where: {
+        paymentId: transactionId,
+      },
+      include: {
+        user: true, // Optionally include the related user data
+      },
+    });
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    res.json(transaction);
+  } catch (error) {
+    console.error("Fetch transaction by ID error:", error);
+    res.status(500).json({ error: "Failed to fetch transaction" });
+  }
+});
 // ... ALL OTHER ROUTES ...
 
 // IMPORTANT: Export router at the end
