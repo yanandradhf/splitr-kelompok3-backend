@@ -66,10 +66,16 @@ app.get("/health", async (req, res) => {
 // Import routes
 const indexRouter = require("./routes/index");
 const adminRouter = require("./routes/admin");
+const dashboardRouter = require("./routes/dashboard");
+const transactionRouter = require("./routes/transaction");
+const analyticsRouter = require("./routes/analytics");
 
 // Use routes
 app.use("/", indexRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/admin/dashboard", dashboardRouter);
+app.use("/api/admin/transactions", transactionRouter);
+app.use("/api/admin/analytics", analyticsRouter);
 
 // 404 handler
 app.use((req, res) => {
