@@ -24,7 +24,7 @@ router.get("/", async (req, res) => {
     const where = {};
 
     // Status filter
-    if (status && status !== "all") {
+    if (status && status !== "all") { 
       where.status = status.toLowerCase();
     }
 
@@ -126,7 +126,7 @@ router.get("/", async (req, res) => {
     // Format response sesuai mockup table
     const formattedTransactions = transactions.map((tx) => ({
       transaction_id:
-        tx.transactionId || `TXN-${tx.paymentId.slice(-8).toUpperCase()}`,
+        tx.transactionId || `${tx.paymentId}`,
       transaction_date: tx.createdAt.toLocaleDateString("en-GB", {
         day: "2-digit",
         month: "long",
@@ -216,6 +216,56 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("Transactions list error:", error);
     res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+});
+
+// GET /api/admin/transactions - get spesific transactins by id
+router.get("/:id", async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const transactionId = req.params.id;
+
+    const transaction = await prisma.payment.findUnique({
+      where: {
+        paymentId: transactionId,
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            bniAccountNumber: true,
+            bniBranchCode: true,
+          },
+        },
+        bill: {
+          select: {
+            billName: true,
+            category: {
+              select: {
+                categoryName: true,
+                categoryIcon: true,
+              },
+            },
+            host: {
+              select: {
+                name: true,
+                bniAccountNumber: true,
+                bniBranchCode: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    res.json(transaction);
+  } catch (error) {
+    console.error("Fetch transaction by ID error:", error);
+    res.status(500).json({ error: "Failed to fetch transaction" });
   }
 });
 
