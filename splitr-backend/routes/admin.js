@@ -1,9 +1,12 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const router = express.Router();
+const jwt = require( 'jsonwebtoken');
 
 // Simple session storage (in-memory, reset ketika server restart)
 const adminSessions = new Map();
+const JWT_SECRET = process.env.JWT_SECRET || 'your_very_secure_secret_key';
+const JWT_EXPIRY = '1h';
 
 // POST /api/admin/login - Simple Admin Login
 router.post("/login", async (req, res) => {
@@ -38,12 +41,31 @@ router.post("/login", async (req, res) => {
       data: { lastLoginAt: new Date() },
     });
 
+    const payload = {
+      adminId: admin.adminId,
+      username: admin.username,
+      role: admin.role,
+    };
+
+    // 2. Generate the token
+    const token = jwt.sign(payload, JWT_SECRET, {
+      expiresIn: JWT_EXPIRY,
+    });
+
     // Simple session ID
     const sessionId = `admin_session_${Date.now()}_${Math.random()
       .toString(36)
       .substr(2, 9)}`;
 
     // Store session (simple in-memory)
+
+    res.cookie('token', token, {
+      httpOnly: true,         // Prevents client-side JS from accessing the cookie
+      secure: process.env.NODE_ENV === 'production', // Only sends cookie over HTTPS in production
+      sameSite: 'strict',     // Mitigates CSRF attacks
+      maxAge: 3600000         // 1 hour in milliseconds
+    });
+
     adminSessions.set(sessionId, {
       adminId: admin.adminId,
       username: admin.username,
@@ -53,7 +75,7 @@ router.post("/login", async (req, res) => {
 
     res.json({
       message: "Login successful",
-      sessionId,
+      token,
       admin: {
         adminId: admin.adminId,
         username: admin.username,
@@ -72,19 +94,12 @@ router.post("/login", async (req, res) => {
 router.post("/logout", async (req, res) => {
   try {
 
-    // Simple session ID
-    const sessionId = req.body.sessionId;
-
-    // Store session (simple in-memory)
-    if (adminSessions.has(sessionId)) {
-      // Delete the session
-      adminSessions.delete(sessionId);
-      console.log(`Admin session ${sessionId} successfully logged out.`);
-      return res.json({ message: "Logout successful" });
-    } else {
-      // Session not found, likely already logged out or invalid
-      return res.status(401).json({ error: "Invalid or expired session" });
-    }
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+    res.json({ message: "Logout successful" });
   } catch (error) {
     console.error("Admin login error:", error);
     res.status(500).json({ error: "Login failed" });
