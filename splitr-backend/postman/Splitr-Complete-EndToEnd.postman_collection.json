@@ -1,0 +1,1556 @@
+{
+  "info": {
+    "name": "Splitr Complete End-to-End API",
+    "description": "# 🚀 Splitr Mobile API - Complete End-to-End Collection\n\n## 📋 Overview\nThis collection contains all endpoints for Splitr Mobile App with proper authentication, bill management, payments, and social features.\n\n## 🔐 Authentication\n- All endpoints (except auth) require Bearer token\n- Login first to get token (auto-saved to collection variables)\n- Pre-seeded users: citra, ahmad, budi, ilham, nabila\n- Default password: `password123`, PIN: `123456`\n\n## 🎯 Main Features\n- **Authentication**: Login, Registration, OTP verification\n- **Bills**: Create, join, assign items, payments\n- **Friends**: Search, add, manage friendships\n- **Groups**: Create and manage bill groups\n- **Payments**: Instant and scheduled payments\n- **Notifications**: Real-time bill updates\n\n## 🧪 Test Scenarios\n1. **Complete Bill Flow**: Host creates → adds participants → payments\n2. **Friend Management**: Search → add → manage friends\n3. **Payment Flow**: Instant and scheduled payments\n\n## 🗄️ Database\n- PostgreSQL with Prisma ORM\n- Pre-seeded with realistic test data\n- 22,000+ sample transactions\n\n## 🔧 Setup\n1. Start server: `npm run dev`\n2. Seed database: `npm run db:seed`\n3. Import this collection to Postman\n4. Run authentication first\n\n---\n*Built by Kelompok 3 - Splitr by BNI*",
+    "version": "7.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://d89b1d919a28.ngrok-free.app",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "temp_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bill_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bill_code",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "friend_user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "group_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notification_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "item_id_1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "item_id_2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "participant_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "schedule_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "activity_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "search_user_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "🔐 Authentication & Registration",
+      "description": "## 🔐 Authentication & Registration\n\n### Overview\nComplete authentication flow including login, registration with OTP verification, and BNI account validation.\n\n### Pre-seeded Users\n- **citra** (Citra Panjaitan) - BNI: 1935826578\n- **ahmad** (Ahmad Sutanto) - BNI: 1234567890\n- **budi** (Budi Santoso) - BNI: 0987654321\n- **ilham** (Ilham Kawil) - BNI: 1978654321\n- **nabila** (Nabila Ulhaq) - BNI: 1954219065\n\n**Default Credentials:**\n- Password: `password123`\n- PIN: `123456`\n\n### Flow\n1. **Login** → Get JWT token (auto-saved)\n2. **Validate BNI** → Check account validity\n3. **Send OTP** → For new registration\n4. **Verify OTP** → Get temp token\n5. **Complete Registration** → Create new user\n6. **Get Balance** → Check BNI balance\n\n### Test Scenario\n- Login with existing user (citra)\n- Register new user flow\n- Validate BNI accounts",
+      "item": [
+        {
+          "name": "1. Login Existing User (Citra)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"citra\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Login successful\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('token', response.token);",
+                  "    console.log('✅ Login successful:', response.user.name);",
+                  "    console.log('BNI Account:', response.user.bniAccountNumber);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Login as Ahmad (Friend)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"ahmad\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "3. Validate BNI Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"namaRekening\": \"Citra Dewi\",\n  \"nomorRekening\": \"1122334455\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/validate-bni",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "validate-bni"]
+            }
+          }
+        },
+        {
+          "name": "4. Send OTP for Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@test.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/send-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "send-otp"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ OTP sent:', response.otp);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@test.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/verify-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "verify-otp"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('temp_token', response.tempToken);",
+                  "    console.log('✅ OTP verified, temp token saved');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Complete Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tempToken\": \"{{temp_token}}\",\n  \"username\": \"newuser123\",\n  \"password\": \"password123\",\n  \"pin\": \"123456\",\n  \"namaRekening\": \"Citra Dewi\",\n  \"nomorRekening\": \"1122334455\",\n  \"phone\": \"+6281234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "7. Get BNI Balance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/auth/bni-balance/1122334455",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "auth", "bni-balance", "1122334455"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📂 Categories",
+      "description": "## 📂 Categories\n\n### Overview\nBill categories for organizing expenses.\n\n### Pre-seeded Categories\n- 🍽️ **Food and Beverage** - Restaurant, cafe, groceries\n- 🎬 **Entertainment** - Movies, games, events\n- 🚗 **Transport** - Taxi, fuel, parking\n- 📦 **Other** - Miscellaneous expenses\n\n### Usage\n- Required for bill creation\n- Auto-saved to variables for testing\n- Used in analytics and reporting",
+      "item": [
+        {
+          "name": "1. Get All Categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/categories",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "categories"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Categories loaded\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.categories && response.categories.length > 0) {",
+                  "        pm.collectionVariables.set('category_id', response.categories[0].categoryId);",
+                  "        console.log('✅ Categories loaded:', response.categories.length);",
+                  "        response.categories.forEach(cat => {",
+                  "            console.log(`${cat.categoryIcon} ${cat.categoryName} - ID: ${cat.categoryId}`);",
+                  "        });",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "👥 Friends Management",
+      "description": "## 👥 Friends Management\n\n### Overview\nManage friendships with search, add, and remove functionality.\n\n### Flow\n1. **Get Friends List** → View current friends\n2. **Search User** → Find user by username\n3. **Add Friend** → Add user by userId (from search)\n4. **Remove Friend** → Remove friendship\n\n### Important Notes\n- Must search username first to get userId\n- Cannot add yourself as friend\n- Bidirectional friendship (both users become friends)\n- Creates notifications for both users\n\n### Test Scenario\n1. Login as citra\n2. Search for 'ahmad'\n3. Add ahmad as friend\n4. Verify friendship created",
+      "item": [
+        {
+          "name": "1. Get Friends List",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/friends",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "friends"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Friends list:', response.friends.length);",
+                  "    if (response.friends.length > 0) {",
+                  "        pm.collectionVariables.set('friend_user_id', response.friends[0].friend.userId);",
+                  "        response.friends.forEach(f => {",
+                  "            console.log(`${f.friend.name} - ${f.friend.userId}`);",
+                  "        });",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Search User by Username",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/friends/search?username=ahmad",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "friends", "search"],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "ahmad"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.found && response.canAddFriend) {",
+                  "        pm.collectionVariables.set('search_user_id', response.user.userId);",
+                  "        console.log('✅ User found:', response.user.name);",
+                  "        console.log('Username:', response.user.username);",
+                  "        console.log('Can add friend:', response.canAddFriend);",
+                  "    } else {",
+                  "        console.log('❌ User not found or already friend');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Add Friend by User ID",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"friendUserId\": \"{{search_user_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/friends/add",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "friends", "add"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Friend added successfully:', response.friend.name);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Remove Friend",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/friends/remove/{{search_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "friends", "remove", "{{search_user_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏢 Groups Management",
+      "description": "## 🏢 Groups Management\n\n### Overview\nCreate and manage groups for recurring bill splitting (office lunch, roommates, etc).\n\n### Features\n- Create groups with multiple members\n- Add/remove members (creator only)\n- View group bill history\n- Member management\n\n### Flow\n1. **Get Groups** → View user's groups\n2. **Create Group** → With initial members\n3. **Get Details** → View group info\n4. **Add Members** → Expand group\n\n### Use Cases\n- Office lunch groups\n- Roommate expenses\n- Travel groups\n- Regular social gatherings",
+      "item": [
+        {
+          "name": "1. Get User Groups",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/groups",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "groups"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Groups loaded:', response.groups.length);",
+                  "    if (response.groups.length > 0) {",
+                  "        pm.collectionVariables.set('group_id', response.groups[0].groupId);",
+                  "        response.groups.forEach(g => {",
+                  "            console.log(`${g.groupName} - ${g.memberCount} members`);",
+                  "        });",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Create New Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupName\": \"Office Lunch Group\",\n  \"description\": \"Daily lunch group for office colleagues\",\n  \"memberIds\": [\"{{friend_user_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/groups/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "groups", "create"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('group_id', response.groupId);",
+                  "    console.log('✅ Group created:', response.groupName);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Get Group Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/groups/{{group_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "groups", "{{group_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🧾 Bills Management - Complete Flow",
+      "description": "## 🧾 Bills Management - Complete Flow\n\n### Overview\nComplete bill lifecycle from creation to payment with host-controlled assignment system.\n\n### Host Flow (Splitwise-like)\n1. **Create Bill** → With items and total amount\n2. **Add Participants** → Host assigns items to users\n3. **Generate Invites** → Share bill code/link\n4. **Manage Assignments** → Control who pays what\n\n### Participant Flow\n1. **Join Bill** → By code, username, or invitation\n2. **View Assignment** → See assigned items\n3. **Make Payment** → Pay assigned amount\n\n### Security Levels\n- **Join by Code**: Friends + assigned users only\n- **Join by Username**: Username match + assignment required\n- **Join by ID**: Explicit invitation only\n\n### Database Tables\n- `bills` → Main bill data\n- `bill_items` → Items in bill\n- `bill_participants` → Who participates\n- `item_assignments` → Item → participant mapping\n- `payments` → Payment records\n\n### Test Scenario\n1. Host creates bill with items\n2. Host adds participant with item assignment\n3. Participant joins and pays\n4. View payment history",
+      "item": [
+        {
+          "name": "1. Create Bill with Items",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billName\": \"Lunch at Warung Padang\",\n  \"categoryId\": \"{{category_id}}\",\n  \"totalAmount\": 67600,\n  \"maxPaymentDate\": \"2024-12-31T23:59:59.000Z\",\n  \"allowScheduledPayment\": true,\n  \"splitMethod\": \"equal\",\n  \"currency\": \"IDR\",\n  \"receiptImageUrl\": \"https://example.com/receipt.jpg\",\n  \"items\": [\n    {\n      \"itemName\": \"Nasi Padang\",\n      \"price\": 25000,\n      \"quantity\": 2,\n      \"category\": \"food_item\"\n    },\n    {\n      \"itemName\": \"Es Teh Manis\",\n      \"price\": 8000,\n      \"quantity\": 2,\n      \"category\": \"beverage_item\"\n    },\n    {\n      \"itemName\": \"Pajak\",\n      \"price\": 6600,\n      \"quantity\": 1,\n      \"category\": \"tax\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "create"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Bill created successfully\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('bill_id', response.billId);",
+                  "    pm.collectionVariables.set('bill_code', response.billCode);",
+                  "    ",
+                  "    console.log('✅ Bill created successfully');",
+                  "    console.log('Bill ID:', response.billId);",
+                  "    console.log('Bill Code:', response.billCode);",
+                  "    console.log('Total Amount:', response.totalAmount);",
+                  "    console.log('Items:', response.items?.length || 0);",
+                  "    console.log('Invite Link:', response.inviteLink);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Get Bill Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "{{bill_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.items && response.items.length > 0) {",
+                  "        pm.collectionVariables.set('item_id_1', response.items[0].itemId);",
+                  "        if (response.items.length > 1) {",
+                  "            pm.collectionVariables.set('item_id_2', response.items[1].itemId);",
+                  "        }",
+                  "    }",
+                  "    console.log('✅ Bill details loaded');",
+                  "    console.log('Items found:', response.items?.length || 0);",
+                  "    if (response.items?.length > 0) {",
+                  "        console.log('Item 1 ID:', response.items[0].itemId);",
+                  "        console.log('Item 2 ID:', response.items[1]?.itemId);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Add Participant by Username (Host assigns items)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"ahmad\",\n  \"items\": [\n    {\n      \"itemId\": \"{{item_id_1}}\",\n      \"quantity\": 1,\n      \"amount\": 25000\n    },\n    {\n      \"itemId\": \"{{item_id_2}}\",\n      \"quantity\": 1,\n      \"amount\": 8000\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}/add-participant-by-username",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "{{bill_id}}", "add-participant-by-username"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Participant added:', response.participant.name);",
+                  "    console.log('Type:', response.participant.type);",
+                  "    console.log('Total Amount:', response.participant.totalAmount);",
+                  "    console.log('Bill Code for sharing:', response.billCode);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Get Item Assignments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}/assignments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "{{bill_id}}", "assignments"]
+            }
+          }
+        },
+        {
+          "name": "5. Join Bill by Username (Ahmad joins)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billCode\": \"{{bill_code}}\",\n  \"username\": \"ahmad\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/join-by-username",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "join-by-username"]
+            }
+          }
+        },
+        {
+          "name": "6. Join Bill by Code (General join)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billCode\": \"{{bill_code}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/join",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "join"]
+            }
+          }
+        },
+        {
+          "name": "7. Invite Friends to Bill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"friendIds\": [\"{{friend_user_id}}\"],\n  \"message\": \"Join my lunch bill!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}/invite",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills", "{{bill_id}}", "invite"]
+            }
+          }
+        },
+        {
+          "name": "8. Get User Bills",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/bills",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "bills"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💳 Payments - Complete Flow",
+      "description": "## 💳 Payments - Complete Flow\n\n### Overview\nSecure payment processing with PIN verification and BNI integration simulation.\n\n### Payment Types\n1. **Instant Payment** → Immediate processing\n2. **Scheduled Payment** → Future date payment\n\n### Security\n- PIN verification required\n- Balance validation\n- Transaction logging\n- BNI reference numbers\n\n### Flow\n1. **Verify PIN** → Validate user PIN\n2. **Process Payment** → Instant or scheduled\n3. **Update Records** → Bill participants, balance\n4. **Generate Receipt** → Transaction details\n\n### Test Scenario\n1. Verify PIN (123456)\n2. Make instant payment\n3. Schedule future payment\n4. Check payment history",
+      "item": [
+        {
+          "name": "1. Verify PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/payments/verify-pin",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "payments", "verify-pin"]
+            }
+          }
+        },
+        {
+          "name": "2. Process Instant Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billId\": \"{{bill_id}}\",\n  \"amount\": 67600,\n  \"pin\": \"123456\",\n  \"paymentType\": \"instant\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/payments/pay",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "payments", "pay"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('payment_id', response.paymentId);",
+                  "    console.log('✅ Payment successful:', response.transactionId);",
+                  "    console.log('Amount:', response.amount);",
+                  "    console.log('BNI Reference:', response.bniReferenceNumber);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Schedule Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billId\": \"{{bill_id}}\",\n  \"amount\": 33800,\n  \"scheduledDate\": \"2024-12-25T10:00:00.000Z\",\n  \"pin\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/payments/schedule",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "payments", "schedule"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('schedule_id', response.scheduleId);",
+                  "    console.log('✅ Payment scheduled:', response.scheduleId);",
+                  "    console.log('Scheduled for:', response.scheduledDate);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Get Scheduled Payments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/payments/scheduled",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "payments", "scheduled"]
+            }
+          }
+        },
+        {
+          "name": "5. Get Payment History",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/payments/history",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "payments", "history"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔔 Notifications",
+      "description": "## 🔔 Notifications\n\n### Overview\nReal-time notifications for bill activities, payments, and social interactions.\n\n### Notification Types\n- **bill_assignment** - Items assigned to you\n- **bill_invitation** - Invited to join bill\n- **payment_reminder** - Payment due soon\n- **payment_success** - Payment completed\n- **participant_joined** - Someone joined your bill\n- **friend_request_accepted** - New friendship\n\n### Features\n- Unread count tracking\n- Mark individual/all as read\n- Bill-specific notifications\n- Test notification generator\n\n### Flow\n1. **Get All** → Recent notifications\n2. **Get Unread** → Unread only\n3. **Mark Read** → Individual notification\n4. **Mark All Read** → Clear all unread",
+      "item": [
+        {
+          "name": "1. Get All Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/notifications?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "notifications"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.notifications && response.notifications.length > 0) {",
+                  "        pm.collectionVariables.set('notification_id', response.notifications[0].notificationId);",
+                  "    }",
+                  "    console.log('✅ Notifications loaded:', response.notifications.length);",
+                  "    console.log('Unread count:', response.unreadCount);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Get Unread Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/notifications?unreadOnly=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "notifications"],
+              "query": [
+                {
+                  "key": "unreadOnly",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/notifications/{{notification_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "notifications", "{{notification_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "4. Mark All as Read",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/notifications/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "5. Create Test Notifications",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/notifications/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "notifications", "test"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Activity Logs",
+      "description": "## 📊 Activity Logs\n\n### Overview\nDetailed activity tracking for user actions and bill events.\n\n### Activity Types\n- **bill_created** - New bill created\n- **bill_joined** - Joined a bill\n- **bill_assigned** - Items assigned\n- **payment_success** - Payment completed\n- **participant_joined** - New participant\n\n### Features\n- Chronological activity feed\n- Bill-specific activities\n- Read/unread status\n- Detailed descriptions\n\n### Usage\n- User activity timeline\n- Bill audit trail\n- Debugging user flows\n- Analytics data source",
+      "item": [
+        {
+          "name": "1. Get User Activities",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/activities?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "activities"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.activities && response.activities.length > 0) {",
+                  "        pm.collectionVariables.set('activity_id', response.activities[0].activityId);",
+                  "    }",
+                  "    console.log('✅ Activities loaded:', response.activities.length);",
+                  "    console.log('Unread count:', response.unreadCount);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Mark Activity as Read",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/activities/{{activity_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "activities", "{{activity_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "3. Mark All Activities as Read",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/activities/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "activities", "read-all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "⚙️ User Profile & Settings",
+      "description": "## ⚙️ User Profile & Settings\n\n### Overview\nUser profile management, transaction history, and spending analytics.\n\n### Features\n- **Profile Info** - Name, phone, BNI account\n- **Settings** - Payment preferences, notifications\n- **Security** - PIN change with password verification\n- **History** - Complete transaction records\n- **Analytics** - Spending patterns and insights\n\n### Analytics Periods\n- **7days** - Last week\n- **30days** - Last month\n- **thismonth** - Current month\n\n### Transaction History\n- Paginated results\n- Filter by status\n- Category breakdown\n- Amount summaries\n\n### Security\n- PIN changes require current password\n- Encrypted PIN storage\n- Secure profile updates",
+      "item": [
+        {
+          "name": "1. Get User Profile",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "profile"]
+            }
+          }
+        },
+        {
+          "name": "2. Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Citra Panjaitan Updated\",\n  \"phone\": \"+6281234567899\",\n  \"defaultPaymentMethod\": \"scheduled\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "profile"]
+            }
+          }
+        },
+        {
+          "name": "3. Change PIN",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password123\",\n  \"newPin\": \"654321\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/profile/change-pin",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "profile", "change-pin"]
+            }
+          }
+        },
+        {
+          "name": "4. Get Transaction History",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/profile/history?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "profile", "history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Get Spending Analytics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/mobile/profile/analytics?period=30days",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "profile", "analytics"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "30days"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔧 System & Health",
+      "description": "## 🔧 System & Health\n\n### Overview\nSystem monitoring and health check endpoints.\n\n### Health Check\n- Database connectivity\n- System statistics\n- Environment info\n- Response time monitoring\n\n### Metrics Included\n- Total users count\n- Total transactions\n- Total transaction amount\n- Database status\n\n### Usage\n- API monitoring\n- System diagnostics\n- Performance tracking\n- Deployment verification",
+      "item": [
+        {
+          "name": "1. Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🧪 Complete End-to-End Test Scenarios",
+      "description": "## 🧪 Complete End-to-End Test Scenarios\n\n### Overview\nReal-world usage scenarios testing complete user journeys from start to finish.\n\n### Scenario 1: Host Perspective\n**Story**: Citra creates dinner bill, adds Ahmad, both pay\n1. Login as Citra (host)\n2. Get categories for bill\n3. Create bill with multiple items\n4. Add Ahmad as participant with specific items\n5. Host pays their portion\n6. View final bill status\n\n### Scenario 2: Participant Perspective\n**Story**: Ahmad receives assignment, joins bill, pays\n1. Login as Ahmad\n2. Check notifications (assignment alert)\n3. Join bill using username validation\n4. View assigned items and amount\n5. Make payment for assigned items\n6. Check payment history\n\n### Expected Results\n- All payments recorded correctly\n- Notifications sent to relevant users\n- Bill status updated properly\n- Activity logs created\n- Balance deductions applied\n\n### Database Verification\n- Check `bill_participants` table\n- Verify `item_assignments` records\n- Confirm `payments` entries\n- Review `notifications` created\n\n### Success Criteria\n✅ Bill created with correct total\n✅ Participants added with assignments\n✅ Payments processed successfully\n✅ Notifications delivered\n✅ Activity logs generated",
+      "item": [
+        {
+          "name": "E2E: Complete Bill Flow (Host Perspective)",
+          "item": [
+            {
+              "name": "1. Login as Host (Citra)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"citra\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/auth/login",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "auth", "login"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('token', response.token);",
+                      "    console.log('✅ Host logged in:', response.user.name);",
+                      "    console.log('BNI Account:', response.user.bniAccountNumber);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "2. Get Categories",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/categories",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "categories"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    if (response.categories && response.categories.length > 0) {",
+                      "        pm.collectionVariables.set('category_id', response.categories[0].categoryId);",
+                      "        console.log('✅ Category ID saved:', response.categories[0].categoryId);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3. Create Bill with Items",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"billName\": \"Team Dinner at Restaurant\",\n  \"categoryId\": \"{{category_id}}\",\n  \"totalAmount\": 195000,\n  \"maxPaymentDate\": \"2024-12-31T23:59:59.000Z\",\n  \"allowScheduledPayment\": true,\n  \"splitMethod\": \"equal\",\n  \"currency\": \"IDR\",\n  \"receiptImageUrl\": \"https://example.com/receipt-dinner.jpg\",\n  \"items\": [\n    {\n      \"itemName\": \"Ayam Bakar\",\n      \"price\": 45000,\n      \"quantity\": 3,\n      \"category\": \"food_item\"\n    },\n    {\n      \"itemName\": \"Nasi Putih\",\n      \"price\": 8000,\n      \"quantity\": 3,\n      \"category\": \"food_item\"\n    },\n    {\n      \"itemName\": \"Es Jeruk\",\n      \"price\": 12000,\n      \"quantity\": 3,\n      \"category\": \"beverage_item\"\n    },\n    {\n      \"itemName\": \"Pajak & Service\",\n      \"price\": 19500,\n      \"quantity\": 1,\n      \"category\": \"tax\"\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/bills/create",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "bills", "create"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('bill_id', response.billId);",
+                      "    pm.collectionVariables.set('bill_code', response.billCode);",
+                      "    console.log('✅ Bill created successfully');",
+                      "    console.log('Bill ID:', response.billId);",
+                      "    console.log('Bill Code:', response.billCode);",
+                      "    console.log('Total Amount:', response.totalAmount);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4. Get Bill Details & Save Item IDs",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "bills", "{{bill_id}}"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    if (response.items && response.items.length > 0) {",
+                      "        pm.collectionVariables.set('item_id_1', response.items[0].itemId);",
+                      "        if (response.items.length > 1) {",
+                      "            pm.collectionVariables.set('item_id_2', response.items[1].itemId);",
+                      "        }",
+                      "    }",
+                      "    console.log('✅ Bill details loaded, item IDs saved');",
+                      "    console.log('Items found:', response.items?.length || 0);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "5. Add Ahmad as Participant with Items",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"ahmad\",\n  \"items\": [\n    {\n      \"itemId\": \"{{item_id_1}}\",\n      \"quantity\": 1,\n      \"amount\": 45000\n    },\n    {\n      \"itemId\": \"{{item_id_2}}\",\n      \"quantity\": 1,\n      \"amount\": 8000\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}/add-participant-by-username",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "bills", "{{bill_id}}", "add-participant-by-username"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Ahmad added as participant');",
+                      "    console.log('Type:', response.participant.type);",
+                      "    console.log('Total Amount:', response.participant.totalAmount);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "6. Host Makes Payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"billId\": \"{{bill_id}}\",\n  \"amount\": 97500,\n  \"pin\": \"123456\",\n  \"paymentType\": \"instant\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/payments/pay",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "payments", "pay"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Host payment completed');",
+                      "    console.log('Transaction ID:', response.transactionId);",
+                      "    console.log('Amount:', response.amount);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "E2E: Participant Flow (Ahmad Perspective)",
+          "item": [
+            {
+              "name": "1. Login as Ahmad",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"ahmad\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/auth/login",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "auth", "login"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('token', response.token);",
+                      "    console.log('✅ Ahmad logged in:', response.user.name);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "2. Check Notifications",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/notifications?unreadOnly=true",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "notifications"],
+                  "query": [
+                    {
+                      "key": "unreadOnly",
+                      "value": "true"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Unread notifications:', response.unreadCount);",
+                      "    response.notifications.forEach(notif => {",
+                      "        console.log(`- ${notif.title}: ${notif.message}`);",
+                      "    });",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3. Join Bill by Username",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"billCode\": \"{{bill_code}}\",\n  \"username\": \"ahmad\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/bills/join-by-username",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "bills", "join-by-username"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Ahmad joined bill successfully');",
+                      "    console.log('Your share:', response.yourShare);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4. View Bill Details & Items",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/bills/{{bill_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "bills", "{{bill_id}}"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Bill details for Ahmad:');",
+                      "    console.log('Your share:', response.yourShare);",
+                      "    console.log('Payment status:', response.yourStatus);",
+                      "    console.log('Items assigned to you:', response.items.filter(item => ",
+                      "        item.assignments.some(a => a.participantName === 'Ahmad Sutanto')",
+                      "    ).length);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "5. Ahmad Makes Payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"billId\": \"{{bill_id}}\",\n  \"amount\": 53000,\n  \"pin\": \"123456\",\n  \"paymentType\": \"instant\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/payments/pay",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "payments", "pay"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Ahmad payment completed');",
+                      "    console.log('Transaction ID:', response.transactionId);",
+                      "    console.log('Amount:', response.amount);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "6. Check Payment History",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/mobile/payments/history",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "mobile", "payments", "history"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    console.log('✅ Payment history loaded:', response.history.length);",
+                      "    response.history.forEach(payment => {",
+                      "        console.log(`- ${payment.billName}: Rp ${payment.amount} (${payment.status})`);",
+                      "    });",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

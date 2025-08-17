@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const authenticateJWT=require("./../middleware/auth.js")
+const authenticateJWT=require("./../../middleware/auth.js")
 
 // GET /api/admin/dashboard/summary
 //router.get("/protected-admin-route", authenticateJWT, (req, res)
