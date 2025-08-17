@@ -20,8 +20,6 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-
-
 // 3. Create Bill (Simplified)
 router.post("/create", authenticateToken, async (req, res) => {
   try {
@@ -81,16 +79,6 @@ router.post("/create", authenticateToken, async (req, res) => {
           })),
         });
       }
-
-      // 3. Create host as first participant
-      await tx.billParticipant.create({
-        data: {
-          billId: bill.billId,
-          userId,
-          amountShare: parseFloat(totalAmount), // Host pays full amount initially
-          paymentStatus: "pending",
-        },
-      });
 
       // 4. Create bill invite for sharing
       await tx.billInvite.create({
@@ -379,10 +367,14 @@ router.get("/:billId", authenticateToken, async (req, res) => {
 
     const userParticipant = bill.billParticipants.find(p => p.userId === userId);
     const isHost = bill.hostId === userId;
+
+    // Calculate payment summary based on billParticipants data
+    const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed");
+    const scheduledParticipants = bill.billParticipants.filter(p => p.paymentStatus === "scheduled");
     
     // Calculate payment summary
-    const totalPaid = bill.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-    const totalScheduled = bill.scheduledPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const totalPaid = completedParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0);
+    const totalScheduled = scheduledParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0);
     const remainingAmount = parseFloat(bill.totalAmount) - totalPaid;
     
     res.json({
@@ -554,6 +546,9 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
 
           const participantType = isFriend ? "friend" : "guest";
 
+          // Determine payment status
+          const paymentStatus = (friendId === userId) ? "completed" : "pending";
+
           // Calculate total amount for this participant
           const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.amount), 0);
 
@@ -563,7 +558,7 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
               billId,
               userId: friendId,
               amountShare: totalAmount,
-              paymentStatus: "pending",
+              paymentStatus,
             },
           });
 
@@ -581,7 +576,9 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
           }
 
           // Create notification for participant (different for friend vs guest)
-          const notificationMessage = isFriend 
+          const notificationMessage = (friendId === userId)
+            ? `Your payment for '${bill.billName}' has been marked as completed.`
+            :isFriend 
             ? `${bill.host.name} assigned you items in '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}`
             : `${bill.host.name} added you as guest to '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}. Join to pay your share.`;
 
@@ -610,6 +607,7 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
             userId: friendId, 
             name: friend.name, 
             totalAmount,
+            paymentStatus,
             itemCount: items.length 
           });
         } catch (error) {
@@ -676,8 +674,11 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
       return res.status(400).json({ error: "User is already a participant" });
     }
 
+    // Check if user is the host
+    const isHost = targetUser.userId === userId;
+
     // Check if user is friend of host
-    const isFriend = await prisma.friend.findFirst({
+    const isFriend = !isHost && await prisma.friend.findFirst({
       where: {
         OR: [
           { userId: bill.hostId, friendUserId: targetUser.userId },
@@ -687,8 +688,28 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
       },
     });
 
-    const participantType = isFriend ? "friend" : "guest";
-    const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+    // Fetch prices of all items and calculate total amount
+    const itemsWithPrice = [];
+    for (const item of items) {
+      const foundItem = await prisma.billItem.findFirst({
+        where: { itemId: item.itemId, billId: billId },
+        select: { price: true }
+      });
+      if (!foundItem) {
+        return res.status(404).json({ error: `Item with ID ${item.itemId} not found in this bill.` });
+      }
+      itemsWithPrice.push({
+        ...item,
+        price: foundItem.price
+      });
+    }
+
+    const totalAmount = itemsWithPrice.reduce((sum, item) => sum + parseFloat(item.price) * (item.quantity || 1), 0);
+
+    const participantType = isHost ? "host" : (isFriend ? "friend" : "guest");
+
+    // Determine payment status: if the target user is the host, their payment is completed.
+    const paymentStatus = (targetUser.userId === userId) ? "completed" : "pending";
 
     const result = await prisma.$transaction(async (tx) => {
       // Create participant
@@ -697,34 +718,45 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
           billId,
           userId: targetUser.userId,
           amountShare: totalAmount,
-          paymentStatus: "pending",
+          paymentStatus,
+          paidAt,
         },
       });
 
       // Create item assignments
       if (items && items.length > 0) {
         await tx.itemAssignment.createMany({
-          data: items.map(item => ({
+          data: itemsWithPrice.map(item => ({
             billId,
             itemId: item.itemId,
             participantId: participant.participantId,
             quantityAssigned: item.quantity,
-            amountAssigned: parseFloat(item.amount),
+            amountAssigned: parseFloat(item.price) * (item.quantity || 1),
           })),
         });
       }
 
       // Create notification
-      const notificationMessage = isFriend 
-        ? `${bill.host.name} assigned you items in '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}`
-        : `${bill.host.name} added you as guest to '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}. Use bill code: ${bill.billCode}`;
+      let notificationMessage;
+      let notificationTitle;
+      if (targetUser.userId === userId) {
+        // Special message for the host being added
+        notificationMessage = `Your payment for '${bill.billName}' has been marked as completed.`;
+        notificationTitle = "Payment Completed";
+      } else if (isFriend) {
+        notificationMessage = `${bill.host.name} assigned you items in '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}`;
+        notificationTitle = "Bill Assignment";
+      } else {
+        notificationMessage = `${bill.host.name} added you as guest to '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}. Use bill code: ${bill.billCode}`;
+        notificationTitle = "Guest Bill Assignment";
+      }
 
       await tx.notification.create({
         data: {
           userId: targetUser.userId,
           billId,
           type: "bill_assignment",
-          title: isFriend ? "Bill Assignment" : "Guest Bill Assignment",
+          title: notificationTitle,
           message: notificationMessage,
         },
       });
@@ -735,7 +767,7 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
           userId: targetUser.userId,
           billId,
           activityType: "bill_assigned",
-          title: isFriend ? "Bill Assigned" : "Added as Guest",
+          title: (targetUser.userId === userId) ? "Payment Completed" : (isFriend ? "Bill Assigned" : "Added as Guest"),
           description: `${bill.host.name} ${isFriend ? 'assigned you items' : 'added you as guest'} in '${bill.billName}'`,
         },
       });
