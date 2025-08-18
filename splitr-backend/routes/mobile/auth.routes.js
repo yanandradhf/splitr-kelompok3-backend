@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+const REFRESH_JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+
+const REFRESH_TOKEN_EXPIRATION_MS = 60 * 60 * 1000;
 
 // 1. Login
 router.post("/login", async (req, res) => {
@@ -24,11 +27,29 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ userId: auth.user.userId }, JWT_SECRET, { expiresIn: "24h" });
+    //Tambah refreshtoken dimasukin ke db userauth
+
+    const refreshToken = jwt.sign({ userId: auth.user.userId}, REFRESH_JWT_SECRET, { expiresIn: "24h" });
+    const refreshTokenExp = new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_MS);
+
+    await prisma.userAuth.update({
+      where: { authId: auth.authId }, // Use authId for uniqueness
+      data: {
+        lastLoginAt: new Date(),
+        loginAttempts: 0, // Reset login attempts on success
+        refreshToken: refreshToken, // Store the newly generated refresh token
+        refreshTokenExp: refreshTokenExp, // Store the refresh token's expiration
+      },
+    });
+    
+    const token = jwt.sign({ userId: auth.user.userId, authId: auth.authId }, JWT_SECRET, { expiresIn: "24h" });
 
     res.json({
       token,
+      refreshToken,
+      refreshTokenExp,
       user: {
+        authId: auth.authId,
         userId: auth.user.userId,
         name: auth.user.name,
         email: auth.user.email,
@@ -245,6 +266,52 @@ router.get("/bni-balance/:accountNumber", async (req, res) => {
   } catch (error) {
     console.error("Get balance error:", error);
     res.status(500).json({ error: "Failed to get balance" });
+  }
+});
+
+// 7. Logout
+router.post("/logout", async (req, res) => {
+  try {
+    const prisma = req.prisma; // Accessing Prisma client from the request object
+
+    // For JWT-based authentication, the client sends the access token in the Authorization header.
+    // To invalidate the refresh token on logout, we need to identify the user.
+    // We can get the user ID from the access token if it's sent, or assume the client
+    // provides sufficient info to identify the UserAuth record (e.g., username or authId).
+
+    // **Important:** For a robust logout with refresh tokens, you'd typically:
+    // 1. Client sends the access token (and maybe refresh token) in the request.
+    // 2. Server verifies the access token to get `userId` (or `authId`).
+    // 3. Server clears the `refreshToken` and `refreshTokenExp` for that user in the database.
+    // 4. Client is instructed to delete its stored tokens.
+
+    const { authId, refreshToken } = req.body; // Client needs to send authId for server to clear the token
+
+    if (!authId) {
+      return res.status(400).json({ error: "Authentication ID required for logout" });
+    }
+    if (!refreshToken) {
+      return res.status(400).json({ error: "Refresh token required for logout" });
+    }
+
+    // Update the UserAuth record to clear the refresh token and its expiration
+    // This effectively "logs out" the user from all devices associated with this refresh token
+    await prisma.userAuth.update({
+      where: { authId: authId },
+      data: {
+        refreshToken: null,      // Set refreshToken to null
+        refreshTokenExp: null,   // Set refreshTokenExp to null
+        loginAttempts: 0,        // Optionally reset login attempts
+        lockedUntil: null        // Optionally clear any lockout
+      },
+    });
+
+    // Send a success response. The client is then expected to delete their stored JWTs.
+    res.json({ message: "Logout successful and refresh token cleared." });
+
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ error: "Logout failed" });
   }
 });
 

@@ -263,4 +263,126 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
   }
 });
 
+//5. Edit Group
+router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params; 
+    const { groupName, description } = req.body; 
+    const prisma = req.prisma;
+    const userId = req.user.userId; 
+
+    if (!groupName && !description) {
+      return res.status(400).json({ error: "No fields provided for update. Please provide groupName or description." });
+    }
+
+
+    const existingGroup = await prisma.group.findUnique({
+      where: {
+        groupId: groupId, 
+      },
+      select: {
+        creatorId: true, 
+      },
+    });
+
+    if (!existingGroup) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    if (existingGroup.creatorId !== userId) {
+      return res.status(403).json({ error: "Only the group creator can edit this group" });
+    }
+
+    const updateData = {};
+    if (groupName !== undefined) { 
+      updateData.groupName = groupName;
+    }
+    if (description !== undefined) { 
+      updateData.description = description;
+    }
+
+    const updatedGroup = await prisma.group.update({
+      where: {
+        groupId: groupId,
+      },
+      data: updateData, 
+      include: {
+        members: { 
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    res.json({
+      message: "Group updated successfully",
+      groupId: updatedGroup.groupId,
+      groupName: updatedGroup.groupName,
+      description: updatedGroup.description,
+      memberCount: updatedGroup.members.length,
+      members: updatedGroup.members.map(member => ({
+        userId: member.userId,
+        name: member.user.name,
+        isCreator: member.isCreator,
+      })),
+    });
+  } catch (error) {
+    console.error("Edit group error:", error);
+    res.status(500).json({ error: "Failed to edit group" });
+  }
+});
+
+// 6. Delete Group
+router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params; 
+    const prisma = req.prisma;
+    const userId = req.user.userId; 
+
+    if (!groupId) {
+      return res.status(400).json({ error: "Group ID required" });
+    }
+
+    const groupToDelete = await prisma.group.findUnique({
+      where: {
+        groupId: groupId, 
+      },
+      select: {
+        creatorId: true, 
+      },
+    });
+
+    if (!groupToDelete) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    if (groupToDelete.creatorId !== userId) {
+
+      return res.status(403).json({ error: "Only the group creator can delete this group" });
+    }
+
+    await prisma.groupMember.deleteMany({
+      where: {
+        groupId: groupId,
+      },
+    });
+
+    await prisma.group.delete({
+      where: {
+        groupId: groupId,
+      },
+    });
+
+    res.json({ message: "Group deleted successfully" });
+  } catch (error) {
+    console.error("Delete group error:", error);
+    res.status(500).json({ error: "Failed to delete group" });
+  }
+});
+
 module.exports = router;
