@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 
+const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+
 const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.headers["authorization"];
@@ -9,7 +11,7 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ error: "Access token required" });
     }
 
-    jwt.verify(token, process.env.JWT_ACCESS_SECRET, async (err, decoded) => {
+    jwt.verify(token,JWT_SECRET, async (err, decoded) => {
       if (err) {
         if (err.name === "TokenExpiredError") {
           return res.status(401).json({ error: "Access token expired" });

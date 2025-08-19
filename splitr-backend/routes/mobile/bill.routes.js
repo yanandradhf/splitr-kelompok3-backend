@@ -1413,6 +1413,7 @@ router.get("/", authenticateToken, async (req, res) => {
   }
 });
 
+// 12. Edit bill
 router.put("/:billId", authenticateToken, async (req, res) => {
   try {
     const { billId } = req.params;
@@ -1595,6 +1596,7 @@ router.delete("/:billId", authenticateToken, async (req, res) => {
   }
 });
 
+// 14. Delete bill participant
 router.delete("/:billId/participant/:participantId", authenticateToken, async (req, res) => {
   try {
     const { billId, participantId } = req.params;

@@ -4,9 +4,25 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
-const REFRESH_JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+const REFRESH_JWT_SECRET = process.env.JWT_SECRET || 'splitr_refresh_secret_key';
 
-const REFRESH_TOKEN_EXPIRATION_MS = 60 * 60 * 1000;
+const REFRESH_TOKEN_EXPIRATION_MS = 24 * 60 * 60 * 1000;
+
+// Middleware to verify token
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
 
 // 1. Login
 router.post("/login", async (req, res) => {
@@ -31,22 +47,20 @@ router.post("/login", async (req, res) => {
 
     const refreshToken = jwt.sign({ userId: auth.user.userId}, REFRESH_JWT_SECRET, { expiresIn: "24h" });
     const refreshTokenExp = new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_MS);
+    const token = jwt.sign({ userId: auth.user.userId, authId: auth.authId }, JWT_SECRET, { expiresIn: "24h" });
 
     await prisma.userAuth.update({
       where: { authId: auth.authId }, // Use authId for uniqueness
       data: {
         lastLoginAt: new Date(),
         loginAttempts: 0, // Reset login attempts on success
-        refreshToken: refreshToken, // Store the newly generated refresh token
+        refreshToken: token, // Store the newly generated refresh token
         refreshTokenExp: refreshTokenExp, // Store the refresh token's expiration
       },
     });
-    
-    const token = jwt.sign({ userId: auth.user.userId, authId: auth.authId }, JWT_SECRET, { expiresIn: "24h" });
 
     res.json({
       token,
-      refreshToken,
       refreshTokenExp,
       user: {
         authId: auth.authId,
@@ -63,7 +77,37 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// 2. Validate BNI Account
+// 2. Change Password
+router.put("/forget-password", authenticateToken, async (req, res) => {
+  try {
+    const { newPassword, confirmPassword } = req.body;
+    const prisma = req.prisma;
+
+    if ( !newPassword || !confirmPassword ) {
+      return res.status(400).json({ error: "Current password and new password required" });
+    }
+
+    if ( newPassword !==confirmPassword ) {
+      return res.status(400).json({ error: "Password validation is false" });
+    }
+
+    // Update Password
+    await prisma.userAuth.update({
+      where: { auth:auth.authId },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 10),
+      },
+    });
+
+    res.json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change PIN error:", error);
+    res.status(500).json({ error: "Failed to change Password" });
+  }
+});
+
+
+// 3. Validate BNI Account
 router.post("/validate-bni", async (req, res) => {
   try {
     const { namaRekening, nomorRekening } = req.body;
@@ -88,7 +132,7 @@ router.post("/validate-bni", async (req, res) => {
   }
 });
 
-// 3. Send OTP (Mock)
+// 4. Send OTP (Mock)
 router.post("/send-otp", async (req, res) => {
   try {
     const { email } = req.body;
@@ -127,7 +171,7 @@ router.post("/send-otp", async (req, res) => {
   }
 });
 
-// 4. Verify OTP
+// 5. Verify OTP
 router.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -167,7 +211,7 @@ router.post("/verify-otp", async (req, res) => {
   }
 });
 
-// 5. Complete Registration
+// 6. Complete Registration
 router.post("/register", async (req, res) => {
   try {
     const { tempToken, username, password, pin, namaRekening, nomorRekening, phone } = req.body;
@@ -225,10 +269,25 @@ router.post("/register", async (req, res) => {
       return { user, auth };
     });
 
+    const refreshToken = jwt.sign({ userId: auth.user.userId}, REFRESH_JWT_SECRET, { expiresIn: "24h" });
+    const refreshTokenExp = new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_MS);
+
+    await prisma.userAuth.update({
+      where: { authId: auth.authId }, // Use authId for uniqueness
+      data: {
+        lastLoginAt: new Date(),
+        loginAttempts: 0, // Reset login attempts on success
+        refreshToken: refreshToken, // Store the newly generated refresh token
+        refreshTokenExp: refreshTokenExp, // Store the refresh token's expiration
+      },
+    });
+
     const token = jwt.sign({ userId: result.user.userId }, JWT_SECRET, { expiresIn: "24h" });
 
     res.json({
       token,
+      refreshToken,
+      refreshTokenExp,
       user: {
         userId: result.user.userId,
         name: result.user.name,
@@ -243,7 +302,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// 6. Get BNI Account Balance
+// 7. Get BNI Account Balance
 router.get("/bni-balance/:accountNumber", async (req, res) => {
   try {
     const { accountNumber } = req.params;
@@ -269,35 +328,35 @@ router.get("/bni-balance/:accountNumber", async (req, res) => {
   }
 });
 
-// 7. Logout
-router.post("/logout", async (req, res) => {
+// 8. Logout
+router.post("/logout", authenticateToken, async (req, res) => {
   try {
     const prisma = req.prisma; // Accessing Prisma client from the request object
+    const { authId } = req.user;
 
-    // For JWT-based authentication, the client sends the access token in the Authorization header.
-    // To invalidate the refresh token on logout, we need to identify the user.
-    // We can get the user ID from the access token if it's sent, or assume the client
-    // provides sufficient info to identify the UserAuth record (e.g., username or authId).
+    // The client should still send the refresh token they want to invalidate.
+    const { token } = req.body;
 
-    // **Important:** For a robust logout with refresh tokens, you'd typically:
-    // 1. Client sends the access token (and maybe refresh token) in the request.
-    // 2. Server verifies the access token to get `userId` (or `authId`).
-    // 3. Server clears the `refreshToken` and `refreshTokenExp` for that user in the database.
-    // 4. Client is instructed to delete its stored tokens.
-
-    const { authId, refreshToken } = req.body; // Client needs to send authId for server to clear the token
-
-    if (!authId) {
-      return res.status(400).json({ error: "Authentication ID required for logout" });
-    }
-    if (!refreshToken) {
+    if (!token) {
       return res.status(400).json({ error: "Refresh token required for logout" });
     }
 
-    // Update the UserAuth record to clear the refresh token and its expiration
-    // This effectively "logs out" the user from all devices associated with this refresh token
-    await prisma.userAuth.update({
+    // Find the user authentication record using the authId from the access token.
+    // Then, verify that the provided refresh token matches the one stored for this user.
+    const auth = await prisma.userAuth.findUnique({
       where: { authId: authId },
+    });
+
+    // Check if the user auth record exists AND if the provided refresh token matches the stored one.
+    if (!auth || auth.refreshToken !== token) {
+      // If the refresh token doesn't match or the record is not found,
+      // it means the provided refresh token is either invalid, already cleared, or belongs to a different session.
+      return res.status(401).json({ error: "Invalid token for this user." });
+    }
+
+    // Update the UserAuth record to clear the refresh token and its expiration
+    await prisma.userAuth.update({
+      where: { authId: auth.authId }, // Use the authId from the found record
       data: {
         refreshToken: null,      // Set refreshToken to null
         refreshTokenExp: null,   // Set refreshTokenExp to null
@@ -306,8 +365,9 @@ router.post("/logout", async (req, res) => {
       },
     });
 
+
     // Send a success response. The client is then expected to delete their stored JWTs.
-    res.json({ message: "Logout successful and refresh token cleared." });
+    res.json({ message: "Logout successful." });
 
   } catch (error) {
     console.error("Logout error:", error);

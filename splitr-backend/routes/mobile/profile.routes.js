@@ -91,6 +91,7 @@ router.get("/", authenticateToken, async (req, res) => {
 router.put("/", authenticateToken, async (req, res) => {
   try {
     const { name, phone, defaultPaymentMethod } = req.body;
+    //const { name, phone, defaultPaymentMethod, profilePicture, emailNotifEnabled, twoFactorAuthEnabled } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
@@ -100,6 +101,9 @@ router.put("/", authenticateToken, async (req, res) => {
         ...(name && { name }),
         ...(phone && { phone }),
         ...(defaultPaymentMethod && { defaultPaymentMethod }),
+        // ...(profilePicture && { profilePicture }),
+        // ...(typeof emailNotifEnabled !== 'undefined' && { emailNotifEnabled }),
+        // ...(typeof twoFactorAuthEnabled !== 'undefined' && { twoFactorAuthEnabled }),
         updatedAt: new Date(),
       },
       select: {
@@ -107,6 +111,9 @@ router.put("/", authenticateToken, async (req, res) => {
         name: true,
         phone: true,
         defaultPaymentMethod: true,
+        // profilePicture: true,
+        // emailNotifEnabled: true,
+        // twoFactorAuthEnabled: true
       },
     });
 
@@ -120,7 +127,47 @@ router.put("/", authenticateToken, async (req, res) => {
   }
 });
 
-// 3. Change PIN
+// 3. Change Password
+router.put("/change-password", authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Current password and new password required" });
+    }
+
+    if (currentPassword ==newPassword) {
+      return res.status(400).json({ error: "New password cannot be the same as current password" });
+    }
+
+    // Verify current password
+    const auth = await prisma.userAuth.findUnique({
+      where: { userId },
+    });
+
+    const isValidPassword = await bcrypt.compare(currentPassword, auth.passwordHash);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+
+    // Update Password
+    await prisma.userAuth.update({
+      where: { auth:auth.authId },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 10),
+      },
+    });
+
+    res.json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change PIN error:", error);
+    res.status(500).json({ error: "Failed to change Password" });
+  }
+});
+
+// 4. Change PIN
 router.put("/change-pin", authenticateToken, async (req, res) => {
   try {
     const { currentPassword, newPin } = req.body;
@@ -156,7 +203,42 @@ router.put("/change-pin", authenticateToken, async (req, res) => {
   }
 });
 
-// 4. Get Transaction History
+// 5. Email Notifications Toogle
+router.put("/email-notifications-toogle", authenticateToken, async (req, res) => {
+  try {
+    const { emailNotifToogle } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+     // Check if the emailNotifEnabled value is a boolean
+    if (typeof emailNotifToogle !== 'boolean') {
+      return res.status(400).json({ error: "Invalid input: emailNotifEnabled must be a boolean." });
+    }
+
+    await prisma.user.update({
+      where: { userId },
+      data: {
+        emailNotifToogle,
+        updatedAt: new Date(),
+      },
+      select: {
+        userId: true,
+        emailNotifToogle,
+      },
+    });
+
+    res.json({
+      message: `Email notifications enabled ${emailNotifToogle ? 'enabled' : 'disabled'} successfully`,
+    });
+  } catch (error) {
+    console.error("Enable email notifications error:", error);
+    res.status(500).json({ error: "Failed to enable email notifications" });
+  }
+});
+
+
+
+// 6. Get Transaction History
 router.get("/history", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
@@ -225,7 +307,7 @@ router.get("/history", authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Get Spending Analytics
+// 7. Get Spending Analytics
 router.get("/analytics", authenticateToken, async (req, res) => {
   try {
     const { period = "30days" } = req.query;

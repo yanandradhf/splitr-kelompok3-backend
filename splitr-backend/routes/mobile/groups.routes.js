@@ -96,6 +96,10 @@ router.post("/create", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Group name required" });
     }
 
+    if (memberIds.length === 0) {
+      return res.status(400).json({ error: "At least one member must be added besides the creator." });
+    }
+
     const group = await prisma.group.create({
       data: {
         creatorId: userId,
@@ -186,6 +190,63 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Add member error:", error);
     res.status(500).json({ error: "Failed to add member" });
+  }
+});
+
+// 3.1. Delete group member before finalizing
+router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) => {
+  try {
+    const { groupId, userId: memberIdToDelete } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    if (!memberIdToDelete) {
+      return res.status(400).json({ error: "Member ID is required" });
+    }
+
+    // Check if the user is the group creator
+    const group = await prisma.group.findFirst({
+      where: {
+        groupId,
+        creatorId: userId,
+      },
+    });
+
+    if (!group) {
+      return res.status(403).json({ error: "Only the group creator can remove members" });
+    }
+
+    // Check if the member to be deleted actually exists in the group
+    const existingMember = await prisma.groupMember.findFirst({
+      where: {
+        groupId,
+        userId: memberIdToDelete,
+      },
+    });
+
+    if (!existingMember) {
+      return res.status(404).json({ error: "Member not found in this group" });
+    }
+
+    // Prevent the creator from deleting themselves
+    if (userId === memberIdToDelete) {
+      return res.status(400).json({ error: "Group creator cannot delete themselves. They must delete the group instead." });
+    }
+
+    // Delete the member
+    await prisma.groupMember.delete({
+      where: {
+        groupId_userId: {
+          groupId: groupId,
+          userId: memberIdToDelete,
+        },
+      },
+    });
+
+    res.json({ message: "Member removed successfully" });
+  } catch (error) {
+    console.error("Remove member error:", error);
+    res.status(500).json({ error: "Failed to remove member" });
   }
 });
 
