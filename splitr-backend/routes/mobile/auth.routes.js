@@ -77,85 +77,57 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// 2.1. Forget password sending email
-// router.post('/forgot-password-send-email', async (req, res) => {
-//   const { email } = req.body;
-//   const prisma = req.prisma;
-//   try {
-//     const user = await prisma.user.findUnique({ where: { email } });
-//     if (!user) {
-//       // For security, don't reveal if the email exists.
-//       return res.status(200).json({ message: 'If a user with that email exists, a password reset link has been sent.' });
-//     }
+// 2. Forget Password to change password
+router.post("/forget-password", authenticateToken, async (req, res) => {
+  try {
+    const { newPassword, confirmPassword} = req.body;
+    const prisma = req.prisma;
 
-//     const resetToken = jwt.sign({ userId: auth.user.userId, authId: auth.authId }, JWT_RESET_SECRET, { expiresIn: "5m" });
-//     const resetTokenExp = new Date(Date.now() + RESET_TOKEN_EXPIRATION_MS);
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Authorization header missing' });
+    }
 
-//     await prisma.userAuth.create({
-//       data: {
-//         refreshToken:resetToken,
-//         userId: user.userId,
-//         refreshTokenExp:resetTokenExp,
-//       },
-//     });
+    const tempToken = authHeader.split(' ')[1];
 
-//     const resetLink = `${req.protocol}://${req.get('host')}/reset-password?token=${resetToken}`;
-//     // Send email with resetLink to user.email
+    if (!tempToken) {
+      return res.status(400).json({ error: "Temporary token required" });
+    }
 
-//     return res.status(200).json({ message: 'Password reset link sent.' });
-//   } catch (error) {
-//     console.error('Forgot password error:', error);
-//     res.status(500).json({ error: 'Server error.' });
-//   }
-// });
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch (err) {
+      return res.status(400).json({ error: "Invalid or expired token" });
+    }
 
-// // 2.2. Forget Password to page input
-// // router.get('/reset-password', resetPassword, (req, res) => {
-// //   // If the middleware succeeds, the user object is available.
-// //   // Render a webpage (e.g., using a view engine like EJS or Pug)
-// //   // that contains a form for the new password.
-// //   // The token is also validated at this point.
-// //   res.render('resetPasswordPage', { user: req.user, refreshToken: req.query.token });
-// // });
+    const auth = await prisma.userAuth.findUnique({
+      where: {authId: decoded.authId,},
+      select: { authId: true,},
+    });
 
-// // 2.3. Forget Password to change password
-// router.post("/forget-password", authenticateResetToken, async (req, res) => {
-//   try {
-//     const { newPassword, confirmPassword, refreshToken } = req.body;
-//     const prisma = req.prisma;
+    if ( !newPassword || !confirmPassword ) {
+      return res.status(400).json({ error: "Current password and new password required" });
+    }
 
-//     const passwordResetToken= await prisma.userAuth.findUnique({
-//       where: { refreshToken },
-//       include: { user: true },
-//     });
+    if ( newPassword !==confirmPassword ) {
+      return res.status(400).json({ error: "Password validation is false" });
+    }
 
-//     if (!passwordResetToken || userAuth.refreshTokenExp < new Date()) {
-//       return res.status(401).json({ error: 'Invalid or expired token.' });
-//     }
+    // Update Password
+    await prisma.userAuth.update({
+      where: { authId: auth.authId },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 10),
+      },
+    });
 
-//     if ( !newPassword || !confirmPassword ) {
-//       return res.status(400).json({ error: "Current password and new password required" });
-//     }
-
-//     if ( newPassword !==confirmPassword ) {
-//       return res.status(400).json({ error: "Password validation is false" });
-//     }
-
-//     // Update Password
-//     await prisma.userAuth.update({
-//       where: { auth:auth.authId },
-//       data: {
-//         passwordHash: await bcrypt.hash(newPassword, 10),
-//       },
-//     });
-//     await prisma.userAuth.delete({ where: { refreshToken } });
-
-//     res.json({ message: "Password changed successfully" });
-//   } catch (error) {
-//     console.error("Change PIN error:", error);
-//     res.status(500).json({ error: "Failed to change Password" });
-//   }
-// });
+    res.json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change PIN error:", error);
+    res.status(500).json({ error: "Failed to change Password" });
+  }
+});
 
 // 3. Validate BNI Account
 router.post("/validate-bni", async (req, res) => {
@@ -385,7 +357,7 @@ router.post("/logout", authenticateToken, async (req, res) => {
     const { authId } = req.user;
 
     // The client should still send the refresh token they want to invalidate.
-     const authHeader = req.headers['authorization'];
+    const authHeader = req.headers['authorization'];
     if (!authHeader) {
         // Handle case where Authorization header is missing
         return res.status(401).json({ message: 'Authorization header missing' });
