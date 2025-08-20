@@ -120,20 +120,16 @@ router.put("/", authenticateToken, async (req, res) => {
 // 3. Change Password
 router.put("/change-password", authenticateToken, async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    if (!currentPassword || !newPassword) {
-      return res
-        .status(400)
-        .json({ error: "Current password and new password required" });
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: "Current password, new password, and confirm password required" });
     }
 
-    if (currentPassword == newPassword) {
-      return res
-        .status(400)
-        .json({ error: "New password cannot be the same as current password" });
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: "New password and confirm password do not match" });
     }
 
     // Verify current password
@@ -141,17 +137,18 @@ router.put("/change-password", authenticateToken, async (req, res) => {
       where: { userId },
     });
 
-    const isValidPassword = await bcrypt.compare(
-      currentPassword,
-      auth.passwordHash
-    );
-    if (!isValidPassword) {
-      return res.status(401).json({ error: "Invalid password" });
+    if (!auth) {
+      return res.status(404).json({ error: "User authentication not found" });
     }
 
-    // Update Password
+    const isValidPassword = await bcrypt.compare(currentPassword, auth.passwordHash);
+    if (!isValidPassword) {
+      return res.status(400).json({ error: "Current password is incorrect" });
+    }
+
+    // Update password
     await prisma.userAuth.update({
-      where: { auth: auth.authId },
+      where: { userId },
       data: {
         passwordHash: await bcrypt.hash(newPassword, 10),
       },
@@ -159,35 +156,38 @@ router.put("/change-password", authenticateToken, async (req, res) => {
 
     res.json({ message: "Password changed successfully" });
   } catch (error) {
-    console.error("Change PIN error:", error);
-    res.status(500).json({ error: "Failed to change Password" });
+    console.error("Change password error:", error);
+    res.status(500).json({ error: "Failed to change password" });
   }
 });
 
 // 4. Change PIN
 router.put("/change-pin", authenticateToken, async (req, res) => {
   try {
-    const { currentPassword, newPin } = req.body;
+    const { currentPin, newPin, confirmPin } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    if (!currentPassword || !newPin) {
-      return res
-        .status(400)
-        .json({ error: "Current password and new PIN required" });
+    if (!currentPin || !newPin || !confirmPin) {
+      return res.status(400).json({ error: "Current PIN, new PIN, and confirm PIN required" });
     }
 
-    // Verify current password
-    const auth = await prisma.userAuth.findUnique({
+    if (newPin !== confirmPin) {
+      return res.status(400).json({ error: "New PIN and confirm PIN do not match" });
+    }
+
+    // Verify current PIN
+    const user = await prisma.user.findUnique({
       where: { userId },
     });
 
-    const isValidPassword = await bcrypt.compare(
-      currentPassword,
-      auth.passwordHash
-    );
-    if (!isValidPassword) {
-      return res.status(401).json({ error: "Invalid password" });
+    if (!user || !user.encryptedPinHash) {
+      return res.status(404).json({ error: "User PIN not found" });
+    }
+
+    const isValidPin = await bcrypt.compare(currentPin, user.encryptedPinHash);
+    if (!isValidPin) {
+      return res.status(400).json({ error: "Current PIN is incorrect" });
     }
 
     // Update PIN

@@ -296,6 +296,14 @@ router.post("/register", async (req, res) => {
 
     // Create user and auth
     const result = await prisma.$transaction(async (tx) => {
+      console.log('Creating user with data:', {
+        name: namaRekening,
+        email: decoded.email,
+        phone,
+        bniAccountNumber: nomorRekening,
+        bniBranchCode: bniAccount.branchCode,
+      });
+      
       const user = await tx.user.create({
         data: {
           name: namaRekening,
@@ -307,6 +315,9 @@ router.post("/register", async (req, res) => {
           isVerified: true,
         },
       });
+      
+      console.log('User created:', user.userId);
+      console.log('Creating userAuth with username:', username);
 
       const auth = await tx.userAuth.create({
         data: {
@@ -315,6 +326,8 @@ router.post("/register", async (req, res) => {
           passwordHash: await bcrypt.hash(password, 10),
         },
       });
+      
+      console.log('UserAuth created:', auth.authId);
 
       return { user, auth };
     });
