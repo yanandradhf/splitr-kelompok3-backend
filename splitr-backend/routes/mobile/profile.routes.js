@@ -90,7 +90,7 @@ router.get("/", authenticateToken, async (req, res) => {
 // 2. Update Profile
 router.put("/", authenticateToken, async (req, res) => {
   try {
-    const { name, phone, defaultPaymentMethod } = req.body;
+    const { name, phone, email } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
@@ -99,14 +99,14 @@ router.put("/", authenticateToken, async (req, res) => {
       data: {
         ...(name && { name }),
         ...(phone && { phone }),
-        ...(defaultPaymentMethod && { defaultPaymentMethod }),
+        ...(email && { email }),
         updatedAt: new Date(),
       },
       select: {
         userId: true,
         name: true,
         phone: true,
-        defaultPaymentMethod: true,
+        email: true,
       },
     });
 

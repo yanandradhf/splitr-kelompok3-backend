@@ -5,6 +5,7 @@ async function seedCategories(prisma) {
       { categoryName: "Food and Beverage", categoryIcon: "🍽️" },
       { categoryName: "Entertainment", categoryIcon: "🎬" },
       { categoryName: "Transport", categoryIcon: "🚗" },
+      { categoryName: "Shopping", categoryIcon: "🛍️" },
       { categoryName: "Other", categoryIcon: "📦" },
     ],
   });

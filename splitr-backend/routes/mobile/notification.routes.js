@@ -2,19 +2,19 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET || "splitr_secret_key";
 
 // Middleware to verify token
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ error: "Access token required" });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) return res.status(403).json({ error: "Invalid token" });
     req.user = user;
     next();
   });
@@ -54,7 +54,7 @@ router.get("/", authenticateToken, async (req, res) => {
     ]);
 
     res.json({
-      notifications: notifications.map(notif => ({
+      notifications: notifications.map((notif) => ({
         notificationId: notif.notificationId,
         type: notif.type,
         title: notif.title,
@@ -134,22 +134,41 @@ router.post("/test", authenticateToken, async (req, res) => {
       {
         userId,
         type: "payment_reminder",
-        title: "Payment Reminder",
-        message: "Don't forget to pay Rp 100,000 for 'Lunch at Pizza Hut'",
+        title: "Tagihan Nungguin Nih",
+        message:
+          "Rp 80,000 buat 'Bakso Malam Minggu' masih nunggu dibayar, jangan kabur ya",
         isRead: false,
       },
       {
         userId,
         type: "payment_success",
-        title: "Payment Successful",
-        message: "Your payment of Rp 50,000 has been processed successfully",
+        title: "Dompet Aman",
+        message:
+          "Kamu baru aja bayar Rp 60,000 untuk 'Ayam Geprek Kantor'. Mantap!",
         isRead: false,
       },
       {
         userId,
         type: "bill_invitation",
-        title: "New Bill Invitation",
-        message: "Ahmad invited you to split 'Coffee Meeting'",
+        title: "Ada Tagihan Masuk",
+        message:
+          "Budi ngajak kamu split 'Martabak Malam Jumat'. Siap-siap keluar duit!",
+        isRead: false,
+      },
+      {
+        userId,
+        type: "payment_failed",
+        title: "Oops, Gagal Transfer",
+        message:
+          "Rp 35,000 buat 'Nasi Goreng Tengah Malam' gagal. Saldo lagi diet ya?",
+        isRead: false,
+      },
+      {
+        userId,
+        type: "session_completed",
+        title: "Akhirnya Lunas Semua",
+        message:
+          "Sesi 'Ngopi Bareng Anak Kos' resmi kelar. Semua orang udah bayar.",
         isRead: false,
       },
     ];
