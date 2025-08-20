@@ -319,25 +319,8 @@ router.post("/register", async (req, res) => {
       return { user, auth };
     });
 
-    const refreshToken = jwt.sign({ userId: auth.user.userId}, REFRESH_JWT_SECRET, { expiresIn: "24h" });
-    const refreshTokenExp = new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_MS);
-
-    await prisma.userAuth.update({
-      where: { authId: auth.authId }, // Use authId for uniqueness
-      data: {
-        lastLoginAt: new Date(),
-        loginAttempts: 0, // Reset login attempts on success
-        refreshToken: refreshToken, // Store the newly generated refresh token
-        refreshTokenExp: refreshTokenExp, // Store the refresh token's expiration
-      },
-    });
-
-    const token = jwt.sign({ userId: result.user.userId }, JWT_SECRET, { expiresIn: "24h" });
-
     res.json({
-      token,
-      refreshToken,
-      refreshTokenExp,
+      message: "Registration successful",
       user: {
         userId: result.user.userId,
         name: result.user.name,
