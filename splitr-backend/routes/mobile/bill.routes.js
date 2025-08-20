@@ -20,8 +20,6 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-
-
 // 3. Create Bill (Simplified)
 router.post("/create", authenticateToken, async (req, res) => {
   try {
@@ -81,16 +79,6 @@ router.post("/create", authenticateToken, async (req, res) => {
           })),
         });
       }
-
-      // 3. Create host as first participant
-      await tx.billParticipant.create({
-        data: {
-          billId: bill.billId,
-          userId,
-          amountShare: parseFloat(totalAmount), // Host pays full amount initially
-          paymentStatus: "pending",
-        },
-      });
 
       // 4. Create bill invite for sharing
       await tx.billInvite.create({
@@ -379,10 +367,14 @@ router.get("/:billId", authenticateToken, async (req, res) => {
 
     const userParticipant = bill.billParticipants.find(p => p.userId === userId);
     const isHost = bill.hostId === userId;
+
+    // Calculate payment summary based on billParticipants data
+    const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed");
+    const scheduledParticipants = bill.billParticipants.filter(p => p.paymentStatus === "scheduled");
     
     // Calculate payment summary
-    const totalPaid = bill.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-    const totalScheduled = bill.scheduledPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const totalPaid = completedParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0);
+    const totalScheduled = scheduledParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0);
     const remainingAmount = parseFloat(bill.totalAmount) - totalPaid;
     
     res.json({
@@ -554,6 +546,9 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
 
           const participantType = isFriend ? "friend" : "guest";
 
+          // Determine payment status
+          const paymentStatus = (friendId === userId) ? "completed" : "pending";
+
           // Calculate total amount for this participant
           const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.amount), 0);
 
@@ -563,7 +558,7 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
               billId,
               userId: friendId,
               amountShare: totalAmount,
-              paymentStatus: "pending",
+              paymentStatus,
             },
           });
 
@@ -581,7 +576,9 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
           }
 
           // Create notification for participant (different for friend vs guest)
-          const notificationMessage = isFriend 
+          const notificationMessage = (friendId === userId)
+            ? `Your payment for '${bill.billName}' has been marked as completed.`
+            :isFriend 
             ? `${bill.host.name} assigned you items in '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}`
             : `${bill.host.name} added you as guest to '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}. Join to pay your share.`;
 
@@ -610,6 +607,7 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
             userId: friendId, 
             name: friend.name, 
             totalAmount,
+            paymentStatus,
             itemCount: items.length 
           });
         } catch (error) {
@@ -676,8 +674,11 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
       return res.status(400).json({ error: "User is already a participant" });
     }
 
+    // Check if user is the host
+    const isHost = targetUser.userId === userId;
+
     // Check if user is friend of host
-    const isFriend = await prisma.friend.findFirst({
+    const isFriend = !isHost && await prisma.friend.findFirst({
       where: {
         OR: [
           { userId: bill.hostId, friendUserId: targetUser.userId },
@@ -687,8 +688,28 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
       },
     });
 
-    const participantType = isFriend ? "friend" : "guest";
-    const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+    // Fetch prices of all items and calculate total amount
+    const itemsWithPrice = [];
+    for (const item of items) {
+      const foundItem = await prisma.billItem.findFirst({
+        where: { itemId: item.itemId, billId: billId },
+        select: { price: true }
+      });
+      if (!foundItem) {
+        return res.status(404).json({ error: `Item with ID ${item.itemId} not found in this bill.` });
+      }
+      itemsWithPrice.push({
+        ...item,
+        price: foundItem.price
+      });
+    }
+
+    const totalAmount = itemsWithPrice.reduce((sum, item) => sum + parseFloat(item.price) * (item.quantity || 1), 0);
+
+    const participantType = isHost ? "host" : (isFriend ? "friend" : "guest");
+
+    // Determine payment status: if the target user is the host, their payment is completed.
+    const paymentStatus = (targetUser.userId === userId) ? "completed" : "pending";
 
     const result = await prisma.$transaction(async (tx) => {
       // Create participant
@@ -697,34 +718,44 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
           billId,
           userId: targetUser.userId,
           amountShare: totalAmount,
-          paymentStatus: "pending",
+          paymentStatus,
         },
       });
 
       // Create item assignments
       if (items && items.length > 0) {
         await tx.itemAssignment.createMany({
-          data: items.map(item => ({
+          data: itemsWithPrice.map(item => ({
             billId,
             itemId: item.itemId,
             participantId: participant.participantId,
             quantityAssigned: item.quantity,
-            amountAssigned: parseFloat(item.amount),
+            amountAssigned: parseFloat(item.price) * (item.quantity || 1),
           })),
         });
       }
 
       // Create notification
-      const notificationMessage = isFriend 
-        ? `${bill.host.name} assigned you items in '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}`
-        : `${bill.host.name} added you as guest to '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}. Use bill code: ${bill.billCode}`;
+      let notificationMessage;
+      let notificationTitle;
+      if (targetUser.userId === userId) {
+        // Special message for the host being added
+        notificationMessage = `Your payment for '${bill.billName}' has been marked as completed.`;
+        notificationTitle = "Payment Completed";
+      } else if (isFriend) {
+        notificationMessage = `${bill.host.name} assigned you items in '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}`;
+        notificationTitle = "Bill Assignment";
+      } else {
+        notificationMessage = `${bill.host.name} added you as guest to '${bill.billName}' - Total: Rp ${totalAmount.toLocaleString()}. Use bill code: ${bill.billCode}`;
+        notificationTitle = "Guest Bill Assignment";
+      }
 
       await tx.notification.create({
         data: {
           userId: targetUser.userId,
           billId,
           type: "bill_assignment",
-          title: isFriend ? "Bill Assignment" : "Guest Bill Assignment",
+          title: notificationTitle,
           message: notificationMessage,
         },
       });
@@ -735,7 +766,7 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
           userId: targetUser.userId,
           billId,
           activityType: "bill_assigned",
-          title: isFriend ? "Bill Assigned" : "Added as Guest",
+          title: (targetUser.userId === userId) ? "Payment Completed" : (isFriend ? "Bill Assigned" : "Added as Guest"),
           description: `${bill.host.name} ${isFriend ? 'assigned you items' : 'added you as guest'} in '${bill.billName}'`,
         },
       });
@@ -759,6 +790,173 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
   } catch (error) {
     console.error("Add participant by username error:", error);
     res.status(500).json({ error: "Failed to add participant" });
+  }
+});
+
+// 7.3 Re-assign item based on ID
+router.put("/:billId/participant/:participantId/assign-items", authenticateToken, async (req, res) => {
+  try {
+    const { billId, participantId } = req.params;
+    const { items } = req.body; // [{ itemId, quantity }] - 'amount' is derived from DB
+    const prisma = req.prisma;
+    const userId = req.user.userId; // This is the host's userId
+
+    // 1. Verify bill ownership. Only the host can re-assign items.
+    const bill = await prisma.bill.findUnique({
+      where: { billId },
+      select: { hostId: true, billName: true }, // Select billName for notification
+    });
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" });
+    }
+
+    if (bill.hostId !== userId) {
+      return res.status(403).json({ error: "Only the bill host can re-assign items for this bill" });
+    }
+
+    // 2. Verify the participant exists and belongs to this bill.
+    const targetParticipant = await prisma.billParticipant.findUnique({
+      where: { participantId },
+      include: { user: { select: { userId: true, name: true, bniAccountNumber: true } } }, // Include user for response/notifications
+    });
+
+    if (!targetParticipant || targetParticipant.billId !== billId) {
+      return res.status(404).json({ error: "Participant not found or does not belong to this bill" });
+    }
+
+    // 3. Fetch prices of all items and calculate total amount.
+    const itemsWithPrice = [];
+    let totalAmount = 0;
+    if (items && items.length > 0) {
+      for (const item of items) {
+        // Ensure itemId exists and belongs to this bill
+        const foundItem = await prisma.billItem.findFirst({
+          where: { itemId: item.itemId, billId: billId },
+          select: { price: true, itemName: true } // Select itemName for clearer error messages
+        });
+        if (!foundItem) {
+          return res.status(404).json({ error: `Item with ID ${item.itemId} not found in this bill.` });
+        }
+        const itemCalculatedAmount = parseFloat(foundItem.price) * (item.quantity || 1);
+        itemsWithPrice.push({
+          ...item,
+          price: foundItem.price,
+          calculatedAmount: itemCalculatedAmount // Store calculated amount for assignment creation
+        });
+        totalAmount += itemCalculatedAmount;
+      }
+    }
+
+    // 4. Determine payment status: if the target participant is the host, their payment is completed.
+    const isHostParticipant = targetParticipant.userId === userId;
+    const paymentStatus = isHostParticipant ? "completed" : "pending";
+
+    // 5. Perform all updates in a single, atomic transaction.
+    await prisma.$transaction(async (tx) => {
+      // Delete existing item assignments for this participant on this bill.
+      await tx.itemAssignment.deleteMany({
+        where: { participantId: targetParticipant.participantId },
+      });
+
+      // Create new item assignments if items are provided.
+      if (itemsWithPrice.length > 0) {
+        await tx.itemAssignment.createMany({
+          data: itemsWithPrice.map(item => ({
+            billId,
+            itemId: item.itemId,
+            participantId: targetParticipant.participantId,
+            quantityAssigned: item.quantity,
+            amountAssigned: item.calculatedAmount, // Use the pre-calculated amount
+          })),
+        });
+      }
+
+      // Update the participant's total amount share and payment status.
+      await tx.billParticipant.update({
+        where: { participantId: targetParticipant.participantId },
+        data: {
+          amountShare: totalAmount,
+          paymentStatus: paymentStatus, // Update status based on host check
+        },
+      });
+
+      // 6. Create notification for the participant whose items were re-assigned.
+      let notificationMessage;
+      let notificationTitle;
+      
+      // Determine if the participant is a friend of the host (if not the host)
+      const isFriend = !isHostParticipant && await tx.friend.findFirst({
+        where: {
+          OR: [
+            { userId: bill.hostId, friendUserId: targetParticipant.userId },
+            { userId: targetParticipant.userId, friendUserId: bill.hostId },
+          ],
+          status: "active",
+        },
+      });
+
+      if (isHostParticipant) {
+        notificationMessage = `Your payment for '${bill.billName}' has been updated and marked as completed. New share: Rp ${totalAmount.toLocaleString()}`;
+        notificationTitle = "Payment Updated & Completed";
+      } else if (isFriend) {
+        notificationMessage = `${bill.hostId === userId ? 'You' : bill.host.name} re-assigned your items in '${bill.billName}' - New Total: Rp ${totalAmount.toLocaleString()}`;
+        notificationTitle = "Bill Item Re-assignment";
+      } else { // Guest
+        notificationMessage = `${bill.hostId === userId ? 'You' : bill.host.name} re-assigned your guest items in '${bill.billName}' - New Total: Rp ${totalAmount.toLocaleString()}.`;
+        notificationTitle = "Guest Bill Item Re-assignment";
+      }
+
+      await tx.notification.create({
+        data: {
+          userId: targetParticipant.userId,
+          billId,
+          type: "bill_assignment_update", // New type for re-assignment
+          title: notificationTitle,
+          message: notificationMessage,
+        },
+      });
+
+      // 7. Create activity log for the host.
+      await tx.activityLog.create({
+        data: {
+          userId, // Host's userId
+          billId,
+          activityType: "participant_reassigned_items",
+          title: "Participant Items Re-assigned",
+          description: `You re-assigned items to ${targetParticipant.user?.name || 'a participant'} in '${bill.billName}'.`,
+        },
+      });
+    });
+
+    // 8. Fetch the updated participant details to return in the response.
+    const updatedParticipant = await prisma.billParticipant.findUnique({
+      where: { participantId },
+      include: {
+        user: { select: { userId: true, name: true, bniAccountNumber: true } },
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Participant items re-assigned successfully",
+      participant: {
+        participantId: updatedParticipant.participantId,
+        userId: updatedParticipant.userId,
+        name: updatedParticipant.user?.name || targetParticipant.tempName, // Use tempName if user not found
+        account: updatedParticipant.user?.bniAccountNumber,
+        amountShare: parseFloat(updatedParticipant.amountShare),
+        paymentStatus: updatedParticipant.paymentStatus,
+        itemCount: items ? items.length : 0,
+      },
+      totalAmountReassigned: totalAmount,
+    });
+  } catch (error) {
+    console.error("Re-assign participant items error:", error);
+    res.status(500).json({
+      error: "Failed to re-assign participant items",
+      details: error.message,
+    });
   }
 });
 
@@ -1212,6 +1410,254 @@ router.get("/", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Get bills error:", error);
     res.status(500).json({ error: "Failed to get bills" });
+  }
+});
+
+// 12. Edit bill
+router.put("/:billId", authenticateToken, async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const {
+      billName,
+      categoryId,
+      groupId,
+      totalAmount,
+      items, // [{ itemName, price, quantity, category, isVerified }]
+      receiptImageUrl,
+      maxPaymentDate,
+      allowScheduledPayment,
+      splitMethod,
+      currency
+    } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // 1. Verify bill ownership. Only the host can update a bill.
+    const bill = await prisma.bill.findUnique({
+      where: { billId },
+      select: { hostId: true },
+    });
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" });
+    }
+
+    if (bill.hostId !== userId) {
+      return res.status(403).json({ error: "Only the bill host can update this bill" });
+    }
+    
+    // 2. Perform all updates in an atomic transaction to ensure data consistency.
+    await prisma.$transaction(async (tx) => {
+      // First, delete all dependent records for a clean update.
+      await tx.itemAssignment.deleteMany({
+        where: { billId },
+      });
+      await tx.billItem.deleteMany({
+        where: { billId },
+      });
+      
+      // Update the main bill record.
+      const updateBillData = {};
+      if (billName !== undefined) updateBillData.billName = billName;
+      if (categoryId !== undefined) updateBillData.categoryId = categoryId;
+      if (groupId !== undefined) updateBillData.groupId = groupId;
+      if (receiptImageUrl !== undefined) updateBillData.receiptImageUrl = receiptImageUrl;
+      if (maxPaymentDate !== undefined) updateBillData.maxPaymentDate = maxPaymentDate ? new Date(maxPaymentDate) : null;
+      if (allowScheduledPayment !== undefined) updateBillData.allowScheduledPayment = allowScheduledPayment;
+      if (splitMethod !== undefined) updateBillData.splitMethod = splitMethod;
+      if (currency !== undefined) updateBillData.currency = currency;
+      
+      // Calculate total amount from the new item list.
+      const newTotalAmount = items.reduce((sum, item) => sum + parseFloat(item.price) * (item.quantity || 1), 0);
+      updateBillData.totalAmount = newTotalAmount;
+
+      await tx.bill.update({
+        where: { billId },
+        data: updateBillData,
+      });
+
+      // Recreate all bill items from the new input.
+      if (items && items.length > 0) {
+        await tx.billItem.createMany({
+          data: items.map(item => ({
+            billId,
+            itemName: item.itemName,
+            price: parseFloat(item.price),
+            quantity: item.quantity || 1,
+            category: item.category || "food_item",
+            ocrConfidence: item.ocrConfidence || null,
+            isVerified: item.isVerified || true,
+          })),
+        });
+      }
+      
+      // OPTIONAL: Update a participant's amount share if needed based on new items.
+      // This is not in the request but may be necessary for logical consistency.
+      // E.g., if split method is "equal" and new items change the total.
+      // This part would be custom to your application logic.
+    });
+
+    // 3. Fetch the completely updated bill to return in the response.
+    const completeBill = await prisma.bill.findUnique({
+      where: { billId },
+      include: {
+        billItems: true,
+        host: true,
+        group: true,
+        category: true,
+      },
+    });
+
+    if (!completeBill) {
+        return res.status(404).json({ error: "Bill not found after update" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Bill updated successfully",
+      bill: completeBill,
+    });
+
+  } catch (error) {
+    console.error("Update bill error:", error);
+    res.status(500).json({
+      error: "Failed to update bill",
+      details: error.message,
+    });
+  }
+});
+
+// 12. Delete Bills
+router.delete("/:billId", authenticateToken, async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // 1. Verify bill ownership first. Only the host can delete a bill.
+    const bill = await prisma.bill.findUnique({
+      where: { billId },
+      select: { hostId: true },
+    });
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" });
+    }
+
+    if (bill.hostId !== userId) {
+      return res.status(403).json({ error: "Only the bill host can delete this bill" });
+    }
+
+    // 2. Use a transaction to ensure all related data is deleted atomically.
+    // If one deletion fails, all of them will be rolled back.
+    await prisma.$transaction(async (tx) => {
+      // Delete Bill invites
+      await tx.billInvite.deleteMany({
+        where: { billId },
+      });
+
+      // Delete item assignments
+      await tx.itemAssignment.deleteMany({
+        where: { billId },
+      });
+
+      // Delete bill items
+      await tx.billItem.deleteMany({
+        where: { billId },
+      });
+      
+      // Delete bill participants
+      await tx.billParticipant.deleteMany({
+        where: { billId },
+      });
+
+      // Delete activity logs related to the bill
+      await tx.activityLog.deleteMany({
+        where: { billId },
+      });
+
+      // Delete the main bill record
+      await tx.bill.delete({
+        where: { billId },
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Bill and all related data deleted successfully",
+      billId: billId,
+    });
+  } catch (error) {
+    console.error("Delete bill error:", error);
+    res.status(500).json({
+      error: "Failed to delete bill",
+      details: error.message,
+    });
+  }
+});
+
+// 14. Delete bill participant
+router.delete("/:billId/participant/:participantId", authenticateToken, async (req, res) => {
+  try {
+    const { billId, participantId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // 1. Verify bill ownership. Only the host can remove participants.
+    const bill = await prisma.bill.findFirst({
+      where: { billId, hostId: userId },
+      select: { billId: true },
+    });
+
+    if (!bill) {
+      return res.status(403).json({ error: "Only the bill host can remove participants" });
+    }
+
+    // 2. Find the participant to ensure they exist and belong to the specified bill.
+    const participant = await prisma.billParticipant.findUnique({
+      where: { participantId },
+    });
+
+    if (!participant || participant.billId !== billId) {
+      return res.status(404).json({ error: "Participant not found or does not belong to this bill" });
+    }
+
+    // 3. Use a transaction to delete the participant and their item assignments.
+    // It's important to delete assignments first due to foreign key constraints.
+    await prisma.$transaction(async (tx) => {
+      // Delete item assignments linked to the participant
+      await tx.itemAssignment.deleteMany({
+        where: { participantId },
+      });
+
+      // Delete the bill participant record
+      await tx.billParticipant.delete({
+        where: { participantId },
+      });
+      
+      // OPTIONAL: Log the activity
+      await tx.activityLog.create({
+        data: {
+          userId,
+          billId,
+          activityType: "participant_removed",
+          title: "Participant Removed",
+          description: `You removed a participant from the bill.`,
+        },
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Participant removed successfully",
+      participantId,
+    });
+  } catch (error) {
+    console.error("Delete participant error:", error);
+    res.status(500).json({
+      error: "Failed to remove participant",
+      details: error.message,
+    });
   }
 });
 

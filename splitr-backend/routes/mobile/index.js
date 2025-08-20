@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 // Import sub-routers
+const activitiesRoutes = require("./activity.routes")
 const authRoutes = require("./auth.routes");
 const billRoutes = require("./bill.routes");
 const paymentRoutes = require("./payment.routes");
@@ -12,6 +13,7 @@ const groupsRoutes = require("./groups.routes");
 const categoriesRoutes = require("./categories.routes");
 
 // Mount routes
+router.use("/activities",activitiesRoutes)
 router.use("/auth", authRoutes);
 router.use("/bills", billRoutes);
 router.use("/payments", paymentRoutes);

@@ -174,6 +174,12 @@ router.post("/schedule", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Scheduled payment not allowed" });
     }
 
+    // Date validation
+    const requestedDate = new Date(scheduledDate);
+    if (bill.maxPaymentDate && requestedDate > bill.maxPaymentDate) {
+      return res.status(400).json({ error: "Scheduled date cannot be after the maximum payment date" });
+    }
+
     // Create scheduled payment
     const schedule = await prisma.scheduledPayment.create({
       data: {
@@ -236,7 +242,70 @@ router.get("/scheduled", authenticateToken, async (req, res) => {
   }
 });
 
-// 11. Get Payment History
+// 11. Delete Scheduled Payments
+router.delete("/schedule/:scheduleId", authenticateToken, async (req, res) => {
+  try {
+    const { scheduleId } = req.params; // Get scheduleId from URL parameters
+    const { pin } = req.body;          // Get PIN from request body
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // 1. Input Validation
+    if (!scheduleId || !pin) {
+      return res.status(400).json({ error: "Schedule ID and PIN are required" });
+    }
+
+    // 2. Verify PIN
+    // Fetch the user to get their stored encrypted PIN hash
+    const user = await prisma.user.findUnique({ where: { userId } });
+    if (!user) {
+      // This case should ideally be caught by authenticateToken, but good to double-check
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Compare the provided PIN with the stored hash
+    const isValidPin = await bcrypt.compare(pin, user.encryptedPinHash);
+    if (!isValidPin) {
+      return res.status(401).json({ error: "Invalid PIN" });
+    }
+
+    // 3. Find the Scheduled Payment and Verify Ownership
+    const scheduledPayment = await prisma.scheduledPayment.findUnique({
+      where: { scheduleId: scheduleId },
+    });
+
+    if (!scheduledPayment) {
+      return res.status(404).json({ error: "Scheduled payment not found" });
+    }
+
+    // Ensure the user is trying to delete their own scheduled payment
+    if (scheduledPayment.userId !== userId) {
+      return res.status(403).json({ error: "Unauthorized: You do not own this scheduled payment" });
+    }
+
+    // 4. Delete the Scheduled Payment
+    await prisma.scheduledPayment.delete({
+      where: { scheduleId: scheduleId },
+    });
+
+    // 5. Send Success Response
+    res.json({
+      status: "deleted",
+      scheduleId: scheduleId,
+      message: "Scheduled payment deleted successfully",
+    });
+
+  } catch (error) {
+    console.error("Delete schedule error:", error);
+    // Handle specific Prisma errors if needed (e.g., P2025 for not found)
+    if (error.code === 'P2025') { // Prisma error code for record not found
+        return res.status(404).json({ error: "Scheduled payment not found" });
+    }
+    res.status(500).json({ error: "Failed to delete scheduled payment" });
+  }
+});
+
+// 12. Get Payment History
 router.get("/history", authenticateToken, async (req, res) => {
   try {
     const prisma = req.prisma;

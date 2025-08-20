@@ -3,19 +3,19 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET || "splitr_secret_key";
 
 // Middleware to verify token
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ error: "Access token required" });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) return res.status(403).json({ error: "Invalid token" });
     req.user = user;
     next();
   });
@@ -47,10 +47,7 @@ router.get("/", authenticateToken, async (req, res) => {
     const [totalBills, totalSpent, pendingPayments] = await Promise.all([
       prisma.bill.count({
         where: {
-          OR: [
-            { hostId: userId },
-            { billParticipants: { some: { userId } } },
-          ],
+          OR: [{ hostId: userId }, { billParticipants: { some: { userId } } }],
         },
       }),
       prisma.payment.aggregate({
@@ -120,15 +117,23 @@ router.put("/", authenticateToken, async (req, res) => {
   }
 });
 
-// 3. Change PIN
-router.put("/change-pin", authenticateToken, async (req, res) => {
+// 3. Change Password
+router.put("/change-password", authenticateToken, async (req, res) => {
   try {
-    const { currentPassword, newPin } = req.body;
+    const { currentPassword, newPassword } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    if (!currentPassword || !newPin) {
-      return res.status(400).json({ error: "Current password and new PIN required" });
+    if (!currentPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ error: "Current password and new password required" });
+    }
+
+    if (currentPassword == newPassword) {
+      return res
+        .status(400)
+        .json({ error: "New password cannot be the same as current password" });
     }
 
     // Verify current password
@@ -136,7 +141,51 @@ router.put("/change-pin", authenticateToken, async (req, res) => {
       where: { userId },
     });
 
-    const isValidPassword = await bcrypt.compare(currentPassword, auth.passwordHash);
+    const isValidPassword = await bcrypt.compare(
+      currentPassword,
+      auth.passwordHash
+    );
+    if (!isValidPassword) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+
+    // Update Password
+    await prisma.userAuth.update({
+      where: { auth: auth.authId },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 10),
+      },
+    });
+
+    res.json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change PIN error:", error);
+    res.status(500).json({ error: "Failed to change Password" });
+  }
+});
+
+// 4. Change PIN
+router.put("/change-pin", authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPin } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    if (!currentPassword || !newPin) {
+      return res
+        .status(400)
+        .json({ error: "Current password and new PIN required" });
+    }
+
+    // Verify current password
+    const auth = await prisma.userAuth.findUnique({
+      where: { userId },
+    });
+
+    const isValidPassword = await bcrypt.compare(
+      currentPassword,
+      auth.passwordHash
+    );
     if (!isValidPassword) {
       return res.status(401).json({ error: "Invalid password" });
     }
@@ -156,7 +205,50 @@ router.put("/change-pin", authenticateToken, async (req, res) => {
   }
 });
 
-// 4. Get Transaction History
+// 5. Email Notifications Toogle
+router.put(
+  "/email-notifications-toogle",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { emailNotifToogle } = req.body;
+      const prisma = req.prisma;
+      const userId = req.user.userId;
+
+      // Check if the emailNotifEnabled value is a boolean
+      if (typeof emailNotifToogle !== "boolean") {
+        return res
+          .status(400)
+          .json({
+            error: "Invalid input: emailNotifEnabled must be a boolean.",
+          });
+      }
+
+      await prisma.user.update({
+        where: { userId },
+        data: {
+          emailNotifToogle,
+          updatedAt: new Date(),
+        },
+        select: {
+          userId: true,
+          emailNotifToogle,
+        },
+      });
+
+      res.json({
+        message: `Email notifications enabled ${
+          emailNotifToogle ? "enabled" : "disabled"
+        } successfully`,
+      });
+    } catch (error) {
+      console.error("Enable email notifications error:", error);
+      res.status(500).json({ error: "Failed to enable email notifications" });
+    }
+  }
+);
+
+// 6. Get Transaction History
 router.get("/history", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
@@ -198,7 +290,7 @@ router.get("/history", authenticateToken, async (req, res) => {
     ]);
 
     res.json({
-      history: payments.map(payment => ({
+      history: payments.map((payment) => ({
         paymentId: payment.paymentId,
         transactionId: payment.transactionId,
         billId: payment.bill.billId,
@@ -225,7 +317,7 @@ router.get("/history", authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Get Spending Analytics
+// 7. Get Spending Analytics
 router.get("/analytics", authenticateToken, async (req, res) => {
   try {
     const { period = "30days" } = req.query;
@@ -267,13 +359,13 @@ router.get("/analytics", authenticateToken, async (req, res) => {
     // Calculate stats
     const total = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
     const average = payments.length > 0 ? total / payments.length : 0;
-    const amounts = payments.map(p => parseFloat(p.amount));
+    const amounts = payments.map((p) => parseFloat(p.amount));
     const highest = Math.max(...amounts, 0);
     const lowest = Math.min(...amounts, 0);
 
     // Group by category
     const categoryMap = new Map();
-    payments.forEach(payment => {
+    payments.forEach((payment) => {
       const category = payment.bill.category?.categoryName || "Other";
       const icon = payment.bill.category?.categoryIcon || "📦";
       if (!categoryMap.has(category)) {
@@ -284,7 +376,7 @@ router.get("/analytics", authenticateToken, async (req, res) => {
       cat.count += 1;
     });
 
-    const byCategory = Array.from(categoryMap.values()).map(cat => ({
+    const byCategory = Array.from(categoryMap.values()).map((cat) => ({
       ...cat,
       percentage: total > 0 ? (cat.amount / total) * 100 : 0,
     }));
