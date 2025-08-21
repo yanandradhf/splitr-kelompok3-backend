@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
+const nodemailer = require('nodemailer');
 const { authenticateResetToken } = require("../../middleware/resetPassword.middleware")
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
@@ -25,6 +26,15 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+const emailTransport = nodemailer.createTransport({
+  host: "sandbox.smtp.mailtrap.io",
+  port: 2525,
+  auth: {
+    user: "def93edfdce17c",
+    pass: "d3484cabeb4222"
+  }
+});
 
 // 1. Login
 router.post("/login", async (req, res) => {
@@ -173,6 +183,17 @@ router.post("/send-otp", async (req, res) => {
     // Generate OTP (always 123456 for testing)
     const otpCode = "123456";
 
+    // const otp = Math.floor(100000 + Math.random() * 900000); 
+
+    // const url = 'https://sandbox.api.mailtrap.io/api/send';
+    // const mailOptions = {
+    //   from: 'splitr@mailtrap.com',
+    //   to: toEmail,
+    //   subject: 'Hello from your app!',
+    //   text: `Your OTP code is ${otp}`
+    // };
+
+    // await emailTransport.sendMail(mailOptions);
     // Delete existing OTP
     await prisma.otpCode.deleteMany({ where: { email } });
 
