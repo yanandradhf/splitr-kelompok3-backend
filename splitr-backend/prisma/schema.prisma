@@ -97,12 +97,10 @@ model User {
   defaultPaymentMethod String   @default("instant") @map("default_payment_method") @db.VarChar(20)
   autoDebitEnabled     Boolean  @default(false) @map("auto_debit_enabled")
   fcmToken             String?  @map("fcm_token")
+  profilePictureUrl    String?  @map("profile_picture_url") @db.VarChar(255)
+  profilePictureName   String?  @map("profile_picture_name") @db.VarChar(100)
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
-
-  // profilePicture       String   @db.VarChar(100)
-  // emailNotifEnabled    Boolean  @default(false) @map("_debit_enabled")
-  // twoFactorAuthEnabled Boolean  @default(false) @map("auto_debit_enabled")
 
   // Relations (same as before)
   createdGroups     Group[]             @relation("GroupCreator")

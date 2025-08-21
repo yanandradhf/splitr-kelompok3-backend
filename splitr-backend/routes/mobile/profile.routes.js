@@ -1,7 +1,43 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 const router = express.Router();
+
+// Configure multer for file upload
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, "../../public/uploads/profiles");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${req.user.userId}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 800 * 800 }, // 2MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png/;
+    const extname = allowedTypes.test(
+      path.extname(file.originalname).toLowerCase()
+    );
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error("Only image files (jpeg, jpg, png, gif) are allowed"));
+    }
+  },
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || "splitr_secret_key";
 
@@ -70,6 +106,8 @@ router.get("/", authenticateToken, async (req, res) => {
         bniBranchCode: user.bniBranchCode,
         isVerified: user.isVerified,
         defaultPaymentMethod: user.defaultPaymentMethod,
+        profilePictureUrl: user.profilePictureUrl,
+        profilePictureName: user.profilePictureName,
         createdAt: user.createdAt,
       },
       stats: {
@@ -104,6 +142,8 @@ router.put("/", authenticateToken, async (req, res) => {
         name: true,
         phone: true,
         email: true,
+        profilePictureUrl: true,
+        profilePictureName: true,
       },
     });
 
@@ -117,6 +157,156 @@ router.put("/", authenticateToken, async (req, res) => {
   }
 });
 
+// 2.1. Upload Profile Picture
+router.put(
+  "/upload-picture",
+  authenticateToken,
+  upload.single("profilePicture"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No image file provided" });
+      }
+
+      const prisma = req.prisma;
+      const userId = req.user.userId;
+      const filename = req.file.filename;
+      const profilePictureUrl = `/uploads/profiles/${filename}`;
+
+      // Get current user to delete old profile picture
+      const currentUser = await prisma.user.findUnique({
+        where: { userId },
+        select: { profilePictureName: true },
+      });
+
+      // Delete old profile picture if exists
+      if (currentUser?.profilePictureName) {
+        const oldFilePath = path.join(
+          __dirname,
+          "../../public/uploads/profiles",
+          currentUser.profilePictureName
+        );
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+        }
+      }
+
+      // Update user with new profile picture
+      const updatedUser = await prisma.user.update({
+        where: { userId },
+        data: {
+          profilePictureUrl: profilePictureUrl,
+          profilePictureName: filename,
+          updatedAt: new Date(),
+        },
+        select: {
+          userId: true,
+          name: true,
+          profilePictureUrl: true,
+          profilePictureName: true,
+        },
+      });
+
+      res.json({
+        message: "Profile picture updated successfully",
+        profilePictureUrl: updatedUser.profilePictureUrl,
+        user: updatedUser,
+      });
+    } catch (error) {
+      console.error("Upload profile picture error:", error);
+      // Delete uploaded file if database update fails
+      if (req.file) {
+        const filePath = path.join(
+          __dirname,
+          "../../public/uploads/profiles",
+          req.file.filename
+        );
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+      res.status(500).json({ error: "Failed to upload profile picture" });
+    }
+  }
+);
+
+// 2.2. Delete Profile Picture
+router.delete("/delete-picture", authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Get current user to delete profile picture file
+    const currentUser = await prisma.user.findUnique({
+      where: { userId },
+      select: { profilePictureName: true },
+    });
+
+    if (!currentUser?.profilePictureName) {
+      return res.status(404).json({ error: "No profile picture found" });
+    }
+
+    // Delete file from filesystem
+    const filePath = path.join(
+      __dirname,
+      "../../public/uploads/profiles",
+      currentUser.profilePictureName
+    );
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Update user to remove profile picture
+    await prisma.user.update({
+      where: { userId },
+      data: {
+        profilePictureUrl: null,
+        profilePictureName: null,
+        updatedAt: new Date(),
+      },
+    });
+
+    res.json({
+      message: "Profile picture deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete profile picture error:", error);
+    res.status(500).json({ error: "Failed to delete profile picture" });
+  }
+});
+
+// 2.3. Get Profile Picture
+router.get("/check-picture", authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: { profilePictureName: true },
+    });
+
+    if (!user?.profilePictureName) {
+      return res.status(404).json({ error: "No profile picture found" });
+    }
+
+    const filePath = path.join(
+      __dirname,
+      "../../public/uploads/profiles",
+      user.profilePictureName
+    );
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Profile picture file not found" });
+    }
+
+    res.sendFile(filePath);
+  } catch (error) {
+    console.error("Get profile picture error:", error);
+    res.status(500).json({ error: "Failed to get profile picture" });
+  }
+});
+
 // 3. Change Password
 router.put("/change-password", authenticateToken, async (req, res) => {
   try {
@@ -125,11 +315,15 @@ router.put("/change-password", authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      return res.status(400).json({ error: "Current password, new password, and confirm password required" });
+      return res.status(400).json({
+        error: "Current password, new password, and confirm password required",
+      });
     }
 
     if (newPassword !== confirmPassword) {
-      return res.status(400).json({ error: "New password and confirm password do not match" });
+      return res
+        .status(400)
+        .json({ error: "New password and confirm password do not match" });
     }
 
     // Verify current password
@@ -141,7 +335,10 @@ router.put("/change-password", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "User authentication not found" });
     }
 
-    const isValidPassword = await bcrypt.compare(currentPassword, auth.passwordHash);
+    const isValidPassword = await bcrypt.compare(
+      currentPassword,
+      auth.passwordHash
+    );
     if (!isValidPassword) {
       return res.status(400).json({ error: "Current password is incorrect" });
     }
@@ -169,11 +366,15 @@ router.put("/change-pin", authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     if (!currentPin || !newPin || !confirmPin) {
-      return res.status(400).json({ error: "Current PIN, new PIN, and confirm PIN required" });
+      return res
+        .status(400)
+        .json({ error: "Current PIN, new PIN, and confirm PIN required" });
     }
 
     if (newPin !== confirmPin) {
-      return res.status(400).json({ error: "New PIN and confirm PIN do not match" });
+      return res
+        .status(400)
+        .json({ error: "New PIN and confirm PIN do not match" });
     }
 
     // Verify current PIN
@@ -217,11 +418,9 @@ router.put(
 
       // Check if the emailNotifEnabled value is a boolean
       if (typeof emailNotifToogle !== "boolean") {
-        return res
-          .status(400)
-          .json({
-            error: "Invalid input: emailNotifEnabled must be a boolean.",
-          });
+        return res.status(400).json({
+          error: "Invalid input: emailNotifEnabled must be a boolean.",
+        });
       }
 
       await prisma.user.update({

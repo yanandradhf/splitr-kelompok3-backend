@@ -1,0 +1,98 @@
+{
+  "info": {
+    "name": "Splitr Profile Picture API",
+    "description": "Profile picture upload/delete endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Upload Profile Picture",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "profilePicture",
+              "type": "file",
+              "src": []
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/profile/upload-picture",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "profile", "upload-picture"]
+        }
+      }
+    },
+    {
+      "name": "Delete Profile Picture",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/mobile/profile/picture",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "profile", "picture"]
+        }
+      }
+    },
+    {
+      "name": "Get Profile Picture by Name",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/mobile/profile/picture/{{picture_name}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "profile", "picture", "{{picture_name}}"]
+        }
+      }
+    },
+    {
+      "name": "Get Profile (with picture)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/mobile/profile/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "profile", ""]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "token",
+      "value": "your_jwt_token_here"
+    },
+    {
+      "key": "picture_name",
+      "value": "user123_1234567890.jpg"
+    }
+  ]
+}
