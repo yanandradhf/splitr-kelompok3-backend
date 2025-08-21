@@ -250,6 +250,54 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
   }
 });
 
+// 3.2. Leave Group
+router.delete("/leave/:groupId", authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId; // The ID of the authenticated user
+
+    // 1. Check if the user trying to leave is the group creator
+    const group = await prisma.group.findFirst({
+      where: {
+        groupId,
+        creatorId: userId,
+      },
+    });
+
+    if (group) {
+      // If the user is the creator, they cannot "leave" but must delete the group
+      return res.status(400).json({ error: "Group creator cannot leave the group. You must delete the group instead." });
+    }
+
+    // 2. Check if the user is actually a member of this group
+    const existingMember = await prisma.groupMember.findFirst({
+      where: {
+        groupId,
+        userId: userId, // Check for the authenticated user's membership
+      },
+    });
+
+    if (!existingMember) {
+      return res.status(404).json({ error: "You are not a member of this group." });
+    }
+
+    // 3. Delete the member's record, effectively making them leave the group
+    await prisma.groupMember.delete({
+      where: {
+        groupId_userId: {
+          groupId: groupId,
+          userId: userId,
+        },
+      },
+    });
+    res.json({ message: "Successfully left the group." });
+  } catch (error) {
+    console.error("Leave group error:", error);
+    res.status(500).json({ error: "Failed to leave group" });
+  }
+});
+
 // 4. Get Group Details
 router.get("/:groupId", authenticateToken, async (req, res) => {
   try {
