@@ -154,7 +154,7 @@ router.post("/validate-bni", async (req, res) => {
   }
 });
 
-// 4. Send OTP (Mock)
+// 4. Send OTP for Registration (Mock)
 router.post("/send-otp", async (req, res) => {
   try {
     const { email } = req.body;
@@ -193,7 +193,133 @@ router.post("/send-otp", async (req, res) => {
   }
 });
 
-// 5. Verify OTP
+// 4.1. Send OTP for Password Reset
+router.post("/send-reset-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+    const prisma = req.prisma;
+
+    if (!email) {
+      return res.status(400).json({ error: "Email required" });
+    }
+
+    // Check if email exists
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (!existingUser) {
+      return res.status(400).json({ error: "Email not registered" });
+    }
+
+    // Generate OTP (always 123456 for testing)
+    const otpCode = "123456";
+
+    // Delete existing reset OTP
+    await prisma.otpCode.deleteMany({ where: { email, purpose: "reset_password" } });
+
+    // Save new OTP
+    await prisma.otpCode.create({
+      data: {
+        email,
+        otpCode,
+        purpose: "reset_password",
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
+      },
+    });
+
+    res.json({ message: "Reset OTP sent to email", otp: otpCode }); // Show OTP for testing
+  } catch (error) {
+    console.error("Send reset OTP error:", error);
+    res.status(500).json({ error: "Failed to send reset OTP" });
+  }
+});
+
+// 4.2. Verify Reset OTP
+router.post("/verify-reset-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const prisma = req.prisma;
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: "Email and OTP required" });
+    }
+
+    const otpRecord = await prisma.otpCode.findFirst({
+      where: {
+        email,
+        otpCode: otp,
+        purpose: "reset_password",
+        isUsed: false,
+        expiresAt: { gte: new Date() },
+      },
+    });
+
+    if (!otpRecord) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+
+    // Mark OTP as used
+    await prisma.otpCode.update({
+      where: { otpId: otpRecord.otpId },
+      data: { isUsed: true },
+    });
+
+    // Generate temp token for reset
+    const tempToken = jwt.sign({ email, purpose: "reset" }, JWT_SECRET, { expiresIn: "10m" });
+
+    res.json({ verified: true, tempToken });
+  } catch (error) {
+    console.error("Verify reset OTP error:", error);
+    res.status(500).json({ error: "Reset OTP verification failed" });
+  }
+});
+
+// 4.3. Reset Password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { tempToken, newPassword, confirmPassword } = req.body;
+    const prisma = req.prisma;
+
+    if (!tempToken || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: "All fields required" });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: "Passwords do not match" });
+    }
+
+    // Verify temp token
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch (err) {
+      return res.status(400).json({ error: "Invalid or expired token" });
+    }
+
+    if (decoded.purpose !== "reset") {
+      return res.status(400).json({ error: "Invalid token purpose" });
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({ where: { email: decoded.email } });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Update password
+    await prisma.userAuth.update({
+      where: { userId: user.userId },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 10),
+      },
+    });
+
+    res.json({ message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ error: "Failed to reset password" });
+  }
+});
+
+// 5. Verify OTP (Registration)
 router.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -268,6 +394,14 @@ router.post("/register", async (req, res) => {
 
     // Create user and auth
     const result = await prisma.$transaction(async (tx) => {
+      console.log('Creating user with data:', {
+        name: namaRekening,
+        email: decoded.email,
+        phone,
+        bniAccountNumber: nomorRekening,
+        bniBranchCode: bniAccount.branchCode,
+      });
+      
       const user = await tx.user.create({
         data: {
           name: namaRekening,
@@ -279,6 +413,9 @@ router.post("/register", async (req, res) => {
           isVerified: true,
         },
       });
+      
+      console.log('User created:', user.userId);
+      console.log('Creating userAuth with username:', username);
 
       const auth = await tx.userAuth.create({
         data: {
@@ -287,29 +424,14 @@ router.post("/register", async (req, res) => {
           passwordHash: await bcrypt.hash(password, 10),
         },
       });
+      
+      console.log('UserAuth created:', auth.authId);
 
       return { user, auth };
     });
 
-    const refreshToken = jwt.sign({ userId: auth.user.userId}, REFRESH_JWT_SECRET, { expiresIn: "24h" });
-    const refreshTokenExp = new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_MS);
-
-    await prisma.userAuth.update({
-      where: { authId: auth.authId }, // Use authId for uniqueness
-      data: {
-        lastLoginAt: new Date(),
-        loginAttempts: 0, // Reset login attempts on success
-        refreshToken: refreshToken, // Store the newly generated refresh token
-        refreshTokenExp: refreshTokenExp, // Store the refresh token's expiration
-      },
-    });
-
-    const token = jwt.sign({ userId: result.user.userId }, JWT_SECRET, { expiresIn: "24h" });
-
     res.json({
-      token,
-      refreshToken,
-      refreshTokenExp,
+      message: "Registration successful",
       user: {
         userId: result.user.userId,
         name: result.user.name,
