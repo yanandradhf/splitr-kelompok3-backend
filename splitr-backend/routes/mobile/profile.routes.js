@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
+const upload  = require("../../middleware/fileUpload.middleware")
 
 const JWT_SECRET = process.env.JWT_SECRET || "splitr_secret_key";
 
@@ -86,10 +87,17 @@ router.get("/", authenticateToken, async (req, res) => {
 
 // 2. Update Profile
 router.put("/", authenticateToken, async (req, res) => {
+// router.put("/", authenticateToken, upload.single('profilePicture'), async (req, res) => {
   try {
-    const { name, phone, email } = req.body;
+    const { name, phone, email, defaultPaymentMethod } = req.body;
+    // const { name, phone, email, defaultPaymentMethod, emailNotifEnabled, autoDebitEnabled, twoFactorAuthEnabled } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // if (req.file) {
+    //   const fileBuffer = req.file.buffer;
+    //   const originalName = req.file.originalname;
+    // }
 
     const updatedUser = await prisma.user.update({
       where: { userId },
@@ -97,6 +105,12 @@ router.put("/", authenticateToken, async (req, res) => {
         ...(name && { name }),
         ...(phone && { phone }),
         ...(email && { email }),
+        ...(defaultPaymentMethod && { defaultPaymentMethod }),
+        // ...(profilePicture && { profilePicture:fileBuffer }),
+        // ...(profilePictureName && { profilePictureName:originalName }),
+        // ...(typeof autoDebitEnabled !== 'undefined' && { autoDebitEnabled }),
+        // ...(typeof emailNotifEnabled !== 'undefined' && { emailNotifEnabled }),
+        // ...(typeof twoFactorAuthEnabled !== 'undefined' && { twoFactorAuthEnabled }),
         updatedAt: new Date(),
       },
       select: {
@@ -104,6 +118,10 @@ router.put("/", authenticateToken, async (req, res) => {
         name: true,
         phone: true,
         email: true,
+        defaultPaymentMethod: true,
+        // profilePicture: true,
+        // emailNotifEnabled: true,
+        // twoFactorAuthEnabled: true
       },
     });
 
