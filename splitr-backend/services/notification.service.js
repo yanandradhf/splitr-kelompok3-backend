@@ -126,6 +126,123 @@ class NotificationService {
       }
     });
   }
+
+  // === BILL NOTIFICATIONS ===
+
+  // Send bill invitation notification
+  async sendBillInvitation(participantIds, billId, billName, hostName, billCode) {
+    const notifications = participantIds.map(participantId => ({
+      userId: participantId,
+      billId,
+      type: "bill_invitation",
+      title: "Bill Invitation",
+      message: `${hostName} invited you to split '${billName}'`,
+      metadata: {
+        billName,
+        hostName,
+        billCode,
+        action: "join_bill"
+      }
+    }));
+
+    await this.prisma.notification.createMany({
+      data: notifications
+    });
+  }
+
+  // Send bill assignment notification
+  async sendBillAssignment(participantId, billId, billName, hostName, amount, billCode) {
+    await this.prisma.notification.create({
+      data: {
+        userId: participantId,
+        billId,
+        type: "bill_assignment",
+        title: "Bill Assignment",
+        message: `${hostName} assigned you items in '${billName}' - Total: Rp ${amount.toLocaleString()}`,
+        metadata: {
+          billName,
+          hostName,
+          amount,
+          billCode,
+          action: "view_bill"
+        }
+      }
+    });
+  }
+
+  // Send payment reminder notification
+  async sendPaymentReminder(participantId, billId, billName, amount, hoursLeft) {
+    await this.prisma.notification.create({
+      data: {
+        userId: participantId,
+        billId,
+        type: "payment_reminder",
+        title: "Payment Reminder",
+        message: `Payment for '${billName}' (Rp ${amount.toLocaleString()}) is due in ${hoursLeft} hours`,
+        metadata: {
+          billName,
+          amount,
+          hoursLeft,
+          action: "pay_now"
+        }
+      }
+    });
+  }
+
+  // Send bill expired notification
+  async sendBillExpired(participantId, billId, billName, amount) {
+    await this.prisma.notification.create({
+      data: {
+        userId: participantId,
+        billId,
+        type: "bill_expired",
+        title: "Bill Expired",
+        message: `Your payment for '${billName}' (Rp ${amount.toLocaleString()}) has expired`,
+        metadata: {
+          billName,
+          amount,
+          action: "view_bill"
+        }
+      }
+    });
+  }
+
+  // Send payment received notification to host
+  async sendPaymentReceived(hostId, billId, billName, participantName, amount) {
+    await this.prisma.notification.create({
+      data: {
+        userId: hostId,
+        billId,
+        type: "payment_received",
+        title: "Payment Received",
+        message: `${participantName} paid Rp ${amount.toLocaleString()} for '${billName}'`,
+        metadata: {
+          billName,
+          participantName,
+          amount,
+          action: "view_bill"
+        }
+      }
+    });
+  }
+
+  // Send participant joined notification to host
+  async sendParticipantJoined(hostId, billId, billName, participantName) {
+    await this.prisma.notification.create({
+      data: {
+        userId: hostId,
+        billId,
+        type: "participant_joined",
+        title: "New Participant",
+        message: `${participantName} joined your bill '${billName}'`,
+        metadata: {
+          billName,
+          participantName,
+          action: "view_bill"
+        }
+      }
+    });
+  }
 }
 
 module.exports = NotificationService;

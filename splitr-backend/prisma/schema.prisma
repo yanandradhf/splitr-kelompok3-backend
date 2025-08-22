@@ -185,6 +185,19 @@ model Bill {
   status                String    @default("active") @db.VarChar(20) // active, completed, cancelled
   splitMethod           String    @default("equal") @map("split_method") @db.VarChar(20)
   currency              String    @default("IDR") @db.VarChar(3)
+  
+  // Fee support - percentages and calculated amounts
+  taxPct                Decimal?  @default(0) @map("tax_pct") @db.Decimal(5, 2)
+  servicePct            Decimal?  @default(0) @map("service_pct") @db.Decimal(5, 2)
+  discountPct           Decimal?  @default(0) @map("discount_pct") @db.Decimal(5, 2)
+  discountNominal       Decimal?  @default(0) @map("discount_nominal") @db.Decimal(10, 2)
+  
+  // Calculated fee amounts (for participant clarity)
+  subTotal              Decimal?  @default(0) @map("sub_total") @db.Decimal(12, 2)
+  taxAmount             Decimal?  @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  serviceAmount         Decimal?  @default(0) @map("service_amount") @db.Decimal(10, 2)
+  discountAmount        Decimal?  @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
@@ -234,6 +247,10 @@ model BillItem {
   price         Decimal  @db.Decimal(10, 2)
   quantity      Int      @default(1)
   category      String?  @db.VarChar(50) // food_item, beverage_item, service, tax
+  
+  // Sharing support
+  isSharing     Boolean  @default(false) @map("is_sharing")
+  
   ocrConfidence Decimal? @map("ocr_confidence") @db.Decimal(3, 2) // 0.00 - 1.00
   isVerified    Boolean  @default(false) @map("is_verified") // user verified OCR result
   createdAt     DateTime @default(now()) @map("created_at")
