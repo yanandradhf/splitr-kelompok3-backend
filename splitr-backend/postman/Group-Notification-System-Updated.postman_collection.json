@@ -1,0 +1,1083 @@
+{
+	"info": {
+		"_postman_id": "group-notification-system-updated",
+		"name": "Group Notification System - Simplified Flow",
+		"description": "Updated testing flow for group system with simplified notifications (no friend notifications, only view_group action)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user2_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user3_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "groupId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "notificationId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user1_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user2_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user3_id",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "🔐 Authentication Setup",
+			"item": [
+				{
+					"name": "Login User 1 (Andra)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('token', response.token);",
+									"    pm.collectionVariables.set('user1_id', response.user.userId);",
+									"    console.log('User 1 logged in:', response.user.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"citra_panjaitan\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login User 2 (Aulia)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('user2_token', response.token);",
+									"    pm.collectionVariables.set('user2_id', response.user.userId);",
+									"    console.log('User 2 logged in:', response.user.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"nabila_ulhaq\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login User 3 (Ilham)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('user3_token', response.token);",
+									"    pm.collectionVariables.set('user3_id', response.user.userId);",
+									"    console.log('User 3 logged in:', response.user.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"ilham_kawil\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "👥 Friend System Setup (No Notifications)",
+			"item": [
+				{
+					"name": "User 1: Add User 2 as Friend",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Friend added successfully (no notification sent)', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"friendUserId\": \"{{user2_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/friends/add",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"friends",
+								"add"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 1: Add User 3 as Friend",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"friendUserId\": \"{{user3_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/friends/add",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"friends",
+								"add"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 2: Verify No Friend Notifications",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should have no friend_added notifications', function () {",
+									"    const response = pm.response.json();",
+									"    const friendNotif = response.notifications.find(n => n.type === 'friend_added');",
+									"    pm.expect(friendNotif).to.be.undefined;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🏢 Group Management Flow",
+			"item": [
+				{
+					"name": "User 1: Create Group with Friends",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('groupId', response.groupId);",
+									"    console.log('Group created:', response.groupName);",
+									"    pm.test('Group created successfully', function () {",
+									"        pm.expect(response.memberCount).to.eql(3);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"groupName\": \"Kantor Team\",\n  \"description\": \"Tim kantor untuk split bill makan siang\",\n  \"memberIds\": [\"{{user2_id}}\", \"{{user3_id}}\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"create"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 1: Get Group Detail (Creator View)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Creator view shows all members as friends', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.isCreator).to.be.true;",
+									"    ",
+									"    const otherMembers = response.members.filter(m => !m.isCreator);",
+									"    otherMembers.forEach(member => {",
+									"        pm.expect(member.isFriend).to.be.true;",
+									"    });",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/{{groupId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"{{groupId}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🔔 Simplified Notification System",
+			"item": [
+				{
+					"name": "User 2: Check Group Invitation Notifications",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should have group invitation notification with view_group action', function () {",
+									"    const response = pm.response.json();",
+									"    const groupNotif = response.notifications.find(n => n.type === 'group_invitation');",
+									"    pm.expect(groupNotif).to.not.be.undefined;",
+									"    pm.expect(groupNotif.groupName).to.eql('Kantor Team');",
+									"    pm.expect(groupNotif.metadata.action).to.eql('view_group');",
+									"    pm.collectionVariables.set('notificationId', groupNotif.notificationId);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 2: View Group from Notification (Mark as Read)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Notification marked as read and returns groupId', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.groupId).to.eql(pm.collectionVariables.get('groupId'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"notificationId\": \"{{notificationId}}\",\n  \"action\": \"view_group\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications/group-action",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications",
+								"group-action"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 2: View Group Detail (Member View)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Member view shows correct friendship status', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.isCreator).to.be.false;",
+									"    ",
+									"    const self = response.members.find(m => m.isCurrentUser);",
+									"    pm.expect(self).to.not.be.undefined;",
+									"    ",
+									"    const creator = response.members.find(m => m.isCreator);",
+									"    pm.expect(creator.canAddFriend).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/{{groupId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"{{groupId}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🤝 Friend Discovery (No Notifications)",
+			"item": [
+				{
+					"name": "User 2: Add Creator as Friend from Group",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Friend added from group (no notification)', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/{{groupId}}/add-friend/{{user1_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"{{groupId}}",
+								"add-friend",
+								"{{user1_id}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 1: Verify No Friend Notifications",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should NOT have friend_added notification', function () {",
+									"    const response = pm.response.json();",
+									"    const friendNotif = response.notifications.find(n => n.type === 'friend_added');",
+									"    pm.expect(friendNotif).to.be.undefined;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 2: View Group Detail (Updated Friendship)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Creator now shows as friend', function () {",
+									"    const response = pm.response.json();",
+									"    const creator = response.members.find(m => m.isCreator);",
+									"    pm.expect(creator.isFriend).to.be.true;",
+									"    pm.expect(creator.canAddFriend).to.be.false;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/{{groupId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"{{groupId}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🚪 Leave Group via Group Detail",
+			"item": [
+				{
+					"name": "User 2: Leave Group via Group Detail Page",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Left group successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user2_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/{{groupId}}/leave",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"{{groupId}}",
+								"leave"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 1: Check Member Left Notification",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should have member left notification', function () {",
+									"    const response = pm.response.json();",
+									"    const leftNotif = response.notifications.find(n => n.type === 'group_member_left');",
+									"    pm.expect(leftNotif).to.not.be.undefined;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "✏️ Group Management Actions",
+			"item": [
+				{
+					"name": "User 1: Edit Group Info",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Group updated successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"groupName\": \"Kantor Team Updated\",\n  \"description\": \"Updated description\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/edit/{{groupId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"edit",
+								"{{groupId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 3: Check Group Updated Notification",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should have group updated notification', function () {",
+									"    const response = pm.response.json();",
+									"    const updateNotif = response.notifications.find(n => n.type === 'group_updated');",
+									"    pm.expect(updateNotif).to.not.be.undefined;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user3_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🗑️ Delete Group Flow",
+			"item": [
+				{
+					"name": "User 1: Delete Group",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Group deleted successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups/delete/{{groupId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups",
+								"delete",
+								"{{groupId}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📊 Final Verification",
+			"item": [
+				{
+					"name": "User 1: Final Notifications Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should have group notifications only (no friend notifications)', function () {",
+									"    const response = pm.response.json();",
+									"    ",
+									"    const memberLeftNotif = response.notifications.find(n => n.type === 'group_member_left');",
+									"    pm.expect(memberLeftNotif).to.not.be.undefined;",
+									"    ",
+									"    // Should NOT have friend_added notifications",
+									"    const friendNotif = response.notifications.find(n => n.type === 'friend_added');",
+									"    pm.expect(friendNotif).to.be.undefined;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				},
+				{
+					"name": "User 3: Final Notifications Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should have group notifications only', function () {",
+									"    const response = pm.response.json();",
+									"    ",
+									"    const inviteNotif = response.notifications.find(n => n.type === 'group_invitation');",
+									"    pm.expect(inviteNotif).to.not.be.undefined;",
+									"    ",
+									"    const updateNotif = response.notifications.find(n => n.type === 'group_updated');",
+									"    pm.expect(updateNotif).to.not.be.undefined;",
+									"    ",
+									"    // Should NOT have friend notifications",
+									"    const friendNotif = response.notifications.find(n => n.type === 'friend_added');",
+									"    pm.expect(friendNotif).to.be.undefined;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{user3_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}
