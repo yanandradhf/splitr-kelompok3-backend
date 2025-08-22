@@ -131,11 +131,18 @@ async function seedBills(users, groups, categories) {
         status: Math.random() > 0.3 ? "completed" : "active",
         splitMethod: "equal",
         createdAt: createdDate,
+        // Add fees support
+        taxPct: Math.random() > 0.5 ? 11 : 0,
+        servicePct: Math.random() > 0.3 ? 5 : 0,
+        discountPct: Math.random() > 0.7 ? 10 : 0,
+        discountNominal: Math.random() > 0.8 ? 5000 : 0,
+        
         billItems: {
-          create: template.items.map(([name, price, qty]) => ({
+          create: template.items.map(([name, price, qty], index) => ({
             itemName: name,
             price: price,
             quantity: qty,
+            isSharing: index === 0 && Math.random() > 0.7, // First item sometimes sharing
             isVerified: true
           }))
         },
@@ -244,17 +251,21 @@ async function seedMassiveTransactions(users, bills) {
 async function seedNotifications(users, bills) {
   const notificationTypes = [
     "payment_reminder", "payment_success", "payment_failed", 
-    "bill_created", "bill_completed", "user_joined", "follow_up"
+    "bill_invitation", "bill_assignment", "bill_expired", "payment_received",
+    "participant_joined", "group_invitation", "group_member_joined"
   ];
   
   const messages = {
     payment_reminder: ["Don't forget to pay your share!", "Payment reminder for", "Your payment is due soon"],
     payment_success: ["Payment successful!", "Your payment has been processed", "Payment completed"],
     payment_failed: ["Payment failed", "Unable to process payment", "Payment error occurred"],
-    bill_created: ["New bill created", "You've been added to a bill", "Bill invitation"],
-    bill_completed: ["Bill completed!", "All payments received", "Bill settled successfully"],
-    user_joined: ["New participant joined", "Someone joined your bill", "Participant added"],
-    follow_up: ["Follow up needed", "Action required", "Please check your bill"]
+    bill_invitation: ["Bill invitation", "You've been invited to split", "New bill invitation"],
+    bill_assignment: ["Items assigned to you", "You've been assigned items", "Bill assignment"],
+    bill_expired: ["Bill expired", "Payment deadline passed", "Bill has expired"],
+    payment_received: ["Payment received", "Someone paid their share", "Payment completed"],
+    participant_joined: ["New participant joined", "Someone joined your bill", "Participant added"],
+    group_invitation: ["Added to group", "Group invitation", "You've been added to a group"],
+    group_member_joined: ["New member joined", "Someone joined your group", "Group member added"]
   };
 
   // Create notifications for first 10 users (aulia through diyaa)
@@ -272,10 +283,16 @@ async function seedNotifications(users, bills) {
       await prisma.notification.create({
         data: {
           userId: user.userId,
-          billId: randomBill.billId,
+          billId: randomType.includes('bill_') || randomType.includes('payment_') ? randomBill.billId : null,
+          groupId: randomType.includes('group_') ? (Math.random() > 0.5 ? bills[0].groupId : null) : null,
           type: randomType,
           title: randomMessage,
           message: `${randomMessage} for '${randomBill.billName}'`,
+          metadata: {
+            billName: randomBill.billName,
+            amount: Math.floor(Math.random() * 100000) + 10000,
+            action: randomType.includes('bill_') ? 'view_bill' : (randomType.includes('group_') ? 'view_group' : null)
+          },
           isRead: Math.random() > 0.3,
           createdAt: notifDate,
           sentAt: notifDate

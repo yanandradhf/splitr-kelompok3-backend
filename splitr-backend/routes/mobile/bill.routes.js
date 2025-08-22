@@ -20,7 +20,134 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// 3. Create Bill (Simplified)
+// 2. Transform Frontend Data (Helper endpoint)
+router.post("/transform-frontend-data", authenticateToken, async (req, res) => {
+  try {
+    const frontendData = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // 1. Category mapping
+    const categoryMapping = {
+      "Food and Beverage": null, // Will find by name
+      "Entertainment": null,
+      "Transport": null,
+      "Other": null
+    };
+
+    let categoryId = null;
+    if (frontendData.category) {
+      const category = await prisma.billCategory.findFirst({
+        where: {
+          categoryName: {
+            contains: frontendData.category.includes("Food") ? "Food" : frontendData.category,
+            mode: "insensitive"
+          }
+        }
+      });
+      categoryId = category?.categoryId;
+    }
+
+    // 2. Transform items
+    const items = frontendData.items.map(item => ({
+      itemName: item.name,
+      price: item.price,
+      quantity: item.qty,
+      category: item.isSharing ? "sharing_item" : "food_item",
+      isSharing: item.isSharing,
+      isVerified: true
+    }));
+
+    // 3. Create item ID to index mapping
+    const itemIdToIndex = {};
+    frontendData.items.forEach((item, index) => {
+      itemIdToIndex[item.id] = index;
+    });
+
+    // 4. Get usernames for member IDs
+    const memberIds = frontendData.selectedMembers.filter(id => id !== "host");
+    const userMap = {};
+    
+    for (const memberId of memberIds) {
+      const user = await prisma.user.findUnique({
+        where: { userId: memberId },
+        include: { auth: { select: { username: true } } }
+      });
+      if (user) {
+        userMap[memberId] = user.auth.username;
+      }
+    }
+
+    // 5. Group assignments by member
+    const memberAssignments = {};
+    frontendData.assignments.forEach(assignment => {
+      if (assignment.memberId === "host") return; // Skip host
+      
+      if (!memberAssignments[assignment.memberId]) {
+        memberAssignments[assignment.memberId] = [];
+      }
+      
+      const itemIndex = itemIdToIndex[assignment.itemId];
+      const item = frontendData.items[itemIndex];
+      
+      memberAssignments[assignment.memberId].push({
+        itemIndex,
+        quantity: item.isSharing ? 1 : assignment.shareQty,
+        amount: item.isSharing ? assignment.shareQty : (item.price * assignment.shareQty)
+      });
+    });
+
+    // 6. Transform participants
+    const participants = [];
+    for (const memberId of Object.keys(memberAssignments)) {
+      const username = userMap[memberId];
+      if (username) {
+        participants.push({
+          username,
+          items: memberAssignments[memberId]
+        });
+      }
+    }
+
+    // 7. Payment deadline
+    const maxPaymentDate = frontendData.paymentMethod === "PAY_NOW" 
+      ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+    // 8. Build backend data
+    const backendData = {
+      billName: frontendData.billName,
+      categoryId,
+      totalAmount: frontendData.totals.grandTotal,
+      maxPaymentDate,
+      allowScheduledPayment: frontendData.paymentMethod === "PAY_LATER",
+      splitMethod: "custom",
+      currency: "IDR",
+      items,
+      participants,
+      fees: frontendData.fees
+    };
+
+    res.json({
+      success: true,
+      backendData,
+      mapping: {
+        categoryId,
+        userMap,
+        itemIdToIndex,
+        participantCount: participants.length
+      }
+    });
+  } catch (error) {
+    console.error("Transform data error:", error);
+    res.status(500).json({ 
+      error: "Failed to transform data",
+      details: error.message 
+    });
+  }
+});
+
+// 3. Create Bill (Enhanced for Frontend Integration)
 router.post("/create", authenticateToken, async (req, res) => {
   try {
     const {
@@ -29,10 +156,12 @@ router.post("/create", authenticateToken, async (req, res) => {
       groupId,
       totalAmount,
       items,
+      participants = [], // New: participants with assignments
+      fees = {}, // New: tax, service, discount
       receiptImageUrl,
       maxPaymentDate,
       allowScheduledPayment = true,
-      splitMethod = "equal",
+      splitMethod = "custom",
       currency = "IDR"
     } = req.body;
     const prisma = req.prisma;
@@ -45,7 +174,13 @@ router.post("/create", authenticateToken, async (req, res) => {
     // Generate unique bill code (max 8 chars)
     const billCode = `B${Date.now().toString().slice(-6)}`;
 
-    // Use transaction for step-by-step creation
+    // Get host info for notifications
+    const host = await prisma.user.findUnique({
+      where: { userId },
+      select: { name: true, bniAccountNumber: true }
+    });
+
+    // Use transaction for complete bill creation
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create bill first
       const bill = await tx.bill.create({
@@ -62,22 +197,127 @@ router.post("/create", authenticateToken, async (req, res) => {
           status: "active",
           splitMethod,
           currency,
+          // Store fees as calculated by frontend
+          taxPct: fees.taxPct || 0,
+          servicePct: fees.servicePct || 0,
+          discountPct: fees.discountPct || 0,
+          discountNominal: fees.discountNominal || 0,
+          subTotal: fees.subTotal || parseFloat(totalAmount),
+          taxAmount: fees.taxAmount || 0,
+          serviceAmount: fees.serviceAmount || 0,
+          discountAmount: fees.discountAmount || 0,
         },
       });
 
-      // 2. Create bill items if provided
+      // 2. Create bill items with isSharing support
+      const createdItems = [];
       if (items && items.length > 0) {
-        await tx.billItem.createMany({
-          data: items.map(item => ({
-            billId: bill.billId,
-            itemName: item.itemName,
-            price: parseFloat(item.price),
-            quantity: item.quantity || 1,
-            category: item.category || "food_item",
-            ocrConfidence: item.ocrConfidence || null,
-            isVerified: item.isVerified || true,
-          })),
-        });
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const createdItem = await tx.billItem.create({
+            data: {
+              billId: bill.billId,
+              itemName: item.itemName,
+              price: parseFloat(item.price),
+              quantity: item.quantity || 1,
+              category: item.category || "food_item",
+              isSharing: item.isSharing || false,
+              ocrConfidence: item.ocrConfidence || null,
+              isVerified: item.isVerified || true,
+            },
+          });
+          createdItems.push({ ...createdItem, originalIndex: i });
+        }
+      }
+
+      // 3. Add participants and create assignments
+      const participantNotifications = [];
+      if (participants && participants.length > 0) {
+        for (const participantData of participants) {
+          const { username, items: assignedItems } = participantData;
+
+          // Find user by username
+          const targetUser = await tx.user.findFirst({
+            where: {
+              auth: {
+                username: { equals: username, mode: "insensitive" }
+              }
+            },
+            include: {
+              auth: { select: { username: true } }
+            }
+          });
+
+          if (!targetUser) {
+            throw new Error(`User with username '${username}' not found`);
+          }
+
+          // Calculate total amount for this participant
+          let totalAmount = 0;
+          const assignments = [];
+
+          for (const assignedItem of assignedItems) {
+            let billItem;
+            
+            // Support both tempItemId and itemIndex for backward compatibility
+            if (assignedItem.tempItemId) {
+              // Find by tempItemId (match with original items array)
+              const originalItemIndex = items.findIndex(item => item.tempItemId === assignedItem.tempItemId);
+              if (originalItemIndex === -1) {
+                throw new Error(`Item with tempItemId '${assignedItem.tempItemId}' not found`);
+              }
+              billItem = createdItems.find(item => item.originalIndex === originalItemIndex);
+            } else if (assignedItem.itemIndex !== undefined) {
+              // Legacy support for itemIndex
+              billItem = createdItems.find(item => item.originalIndex === assignedItem.itemIndex);
+            }
+            
+            if (!billItem) {
+              throw new Error(`Item at index ${assignedItem.itemIndex || 'undefined'} not found`);
+            }
+
+            const itemAmount = billItem.isSharing 
+              ? parseFloat(assignedItem.amount) 
+              : parseFloat(billItem.price) * assignedItem.quantity;
+            
+            totalAmount += itemAmount;
+            assignments.push({
+              billId: bill.billId,
+              itemId: billItem.itemId,
+              quantityAssigned: assignedItem.quantity,
+              amountAssigned: itemAmount
+            });
+          }
+
+          // Create participant
+          const participant = await tx.billParticipant.create({
+            data: {
+              billId: bill.billId,
+              userId: targetUser.userId,
+              amountShare: totalAmount,
+              paymentStatus: "pending",
+            },
+          });
+
+          // Create item assignments
+          if (assignments.length > 0) {
+            await tx.itemAssignment.createMany({
+              data: assignments.map(assignment => ({
+                billId: assignment.billId,
+                itemId: assignment.itemId,
+                participantId: participant.participantId,
+                quantityAssigned: assignment.quantityAssigned,
+                amountAssigned: assignment.amountAssigned,
+              })),
+            });
+          }
+
+          // Prepare notification data
+          participantNotifications.push({
+            userId: targetUser.userId,
+            amount: totalAmount
+          });
+        }
       }
 
       // 4. Create bill invite for sharing
@@ -105,12 +345,29 @@ router.post("/create", authenticateToken, async (req, res) => {
         },
       });
 
-      return bill;
+      return { bill, createdItems, participantNotifications };
     });
+
+    // 6. Send notifications to participants
+    if (result.participantNotifications.length > 0) {
+      const NotificationService = require('../../services/notification.service');
+      const notificationService = new NotificationService(prisma);
+
+      for (const participant of result.participantNotifications) {
+        await notificationService.sendBillAssignment(
+          participant.userId,
+          result.bill.billId,
+          billName,
+          host.name,
+          participant.amount,
+          billCode
+        );
+      }
+    }
 
     // Get complete bill data
     const completeBill = await prisma.bill.findUnique({
-      where: { billId: result.billId },
+      where: { billId: result.bill.billId },
       include: {
         billItems: true,
         host: true,
@@ -133,13 +390,37 @@ router.post("/create", authenticateToken, async (req, res) => {
       status: completeBill.status,
       category: completeBill.category?.categoryName,
       group: completeBill.group?.groupName,
-      items: completeBill.billItems,
+      items: completeBill.billItems.map((item, index) => {
+        const originalItem = items[index];
+        return {
+          itemId: item.itemId,
+          tempItemId: originalItem?.tempItemId, // Return frontend temp ID
+          itemName: item.itemName,
+          price: parseFloat(item.price),
+          quantity: item.quantity,
+          category: item.category,
+          isSharing: item.isSharing,
+          isVerified: item.isVerified
+        };
+      }),
       host: {
         name: completeBill.host.name,
         account: completeBill.host.bniAccountNumber,
       },
       inviteLink: completeBill.billInvites[0]?.inviteLink,
       qrCodeUrl: completeBill.billInvites[0]?.qrCodeUrl,
+      fees: {
+        taxPct: parseFloat(completeBill.taxPct || 0),
+        servicePct: parseFloat(completeBill.servicePct || 0),
+        discountPct: parseFloat(completeBill.discountPct || 0),
+        discountNominal: parseFloat(completeBill.discountNominal || 0),
+        subTotal: parseFloat(completeBill.subTotal || 0),
+        taxAmount: parseFloat(completeBill.taxAmount || 0),
+        serviceAmount: parseFloat(completeBill.serviceAmount || 0),
+        discountAmount: parseFloat(completeBill.discountAmount || 0)
+      },
+      participantsAdded: result.participantNotifications.length,
+      notificationsSent: result.participantNotifications.length
     });
   } catch (error) {
     console.error("Create bill error:", error);
@@ -525,7 +806,102 @@ router.post("/join", authenticateToken, async (req, res) => {
   }
 });
 
-// 6. Get Bill Details
+// 4.1 Get My Assigned Bills (Participant POV) - MUST BE BEFORE /:billId
+router.get("/assigned", authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    const bills = await prisma.bill.findMany({
+      where: {
+        AND: [
+          { hostId: { not: userId } },
+          { billParticipants: { some: { userId } } }
+        ]
+      },
+      include: {
+        host: { select: { name: true, bniAccountNumber: true } },
+        billParticipants: {
+          where: { userId },
+          select: { amountShare: true, paymentStatus: true, paidAt: true }
+        },
+        category: true,
+        billItems: {
+          include: {
+            itemAssignments: {
+              where: {
+                participant: {
+                  userId
+                }
+              },
+              select: {
+                quantityAssigned: true,
+                amountAssigned: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({
+      success: true,
+      assignedBills: bills.map(bill => {
+        const participant = bill.billParticipants[0];
+        
+        const now = new Date();
+        const deadline24h = new Date(bill.createdAt.getTime() + 24 * 60 * 60 * 1000);
+        const maxPaymentDate = new Date(bill.maxPaymentDate);
+        const paymentDeadline = bill.allowScheduledPayment ? maxPaymentDate : deadline24h;
+        const isExpired = now > paymentDeadline;
+        
+        const myItems = bill.billItems
+          .filter(item => item.itemAssignments.length > 0)
+          .map(item => ({
+            itemName: item.itemName,
+            price: parseFloat(item.price),
+            quantity: item.itemAssignments[0].quantityAssigned,
+            amount: parseFloat(item.itemAssignments[0].amountAssigned),
+            category: item.category
+          }));
+        
+        return {
+          billId: bill.billId,
+          billCode: bill.billCode,
+          billName: bill.billName,
+          totalBillAmount: parseFloat(bill.totalAmount),
+          yourShare: parseFloat(participant.amountShare),
+          paymentStatus: participant.paymentStatus,
+          paidAt: participant.paidAt,
+          category: bill.category?.categoryName,
+          hostName: bill.host.name,
+          hostAccount: bill.host.bniAccountNumber,
+          paymentDeadline,
+          isExpired,
+          canSchedule: bill.allowScheduledPayment,
+          myItems,
+          itemCount: myItems.length,
+          feeBreakdown: {
+            subTotal: parseFloat(bill.subTotal || 0),
+            taxPct: parseFloat(bill.taxPct || 0),
+            taxAmount: parseFloat(bill.taxAmount || 0),
+            servicePct: parseFloat(bill.servicePct || 0),
+            serviceAmount: parseFloat(bill.serviceAmount || 0),
+            discountPct: parseFloat(bill.discountPct || 0),
+            discountAmount: parseFloat(bill.discountAmount || 0)
+          },
+          createdAt: bill.createdAt,
+        };
+      })
+    });
+  } catch (error) {
+    console.error("Get assigned bills error:", error);
+    res.status(500).json({ error: "Failed to get assigned bills" });
+  }
+});
+
+// 5. Get Bill Details
 router.get("/:billId", authenticateToken, async (req, res) => {
   try {
     const { billId } = req.params;
@@ -601,6 +977,16 @@ router.get("/:billId", authenticateToken, async (req, res) => {
       splitMethod: bill.splitMethod,
       currency: bill.currency,
       receiptImageUrl: bill.receiptImageUrl,
+      fees: {
+        taxPct: parseFloat(bill.taxPct || 0),
+        servicePct: parseFloat(bill.servicePct || 0),
+        discountPct: parseFloat(bill.discountPct || 0),
+        discountNominal: parseFloat(bill.discountNominal || 0),
+        subTotal: parseFloat(bill.subTotal || 0),
+        taxAmount: parseFloat(bill.taxAmount || 0),
+        serviceAmount: parseFloat(bill.serviceAmount || 0),
+        discountAmount: parseFloat(bill.discountAmount || 0)
+      },
       category: {
         name: bill.category?.categoryName,
         icon: bill.category?.categoryIcon,
@@ -1587,14 +1973,29 @@ router.get("/", authenticateToken, async (req, res) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+    const { type = "all" } = req.query;
 
-    const bills = await prisma.bill.findMany({
-      where: {
+    let whereCondition;
+    if (type === "assigned") {
+      whereCondition = {
+        AND: [
+          { hostId: { not: userId } },
+          { billParticipants: { some: { userId } } }
+        ]
+      };
+    } else if (type === "hosted") {
+      whereCondition = { hostId: userId };
+    } else {
+      whereCondition = {
         OR: [
           { hostId: userId },
           { billParticipants: { some: { userId } } },
         ],
-      },
+      };
+    }
+
+    const bills = await prisma.bill.findMany({
+      where: whereCondition,
       include: {
         host: true,
         billParticipants: {
@@ -1606,25 +2007,42 @@ router.get("/", authenticateToken, async (req, res) => {
     });
 
     res.json({
-      bills: bills.map(bill => ({
-        billId: bill.billId,
-        billCode: bill.billCode,
-        billName: bill.billName,
-        totalAmount: bill.totalAmount,
-        status: bill.status,
-        category: bill.category?.categoryName,
-        isHost: bill.hostId === userId,
-        hostName: bill.host.name,
-        yourShare: bill.billParticipants[0]?.amountShare || 0,
-        paymentStatus: bill.billParticipants[0]?.paymentStatus || "not_participant",
-        createdAt: bill.createdAt,
-      })),
+      bills: bills.map(bill => {
+        const participant = bill.billParticipants[0];
+        const isHost = bill.hostId === userId;
+        
+        const now = new Date();
+        const deadline24h = new Date(bill.createdAt.getTime() + 24 * 60 * 60 * 1000);
+        const maxPaymentDate = new Date(bill.maxPaymentDate);
+        const paymentDeadline = bill.allowScheduledPayment ? maxPaymentDate : deadline24h;
+        const isExpired = now > paymentDeadline;
+        
+        return {
+          billId: bill.billId,
+          billCode: bill.billCode,
+          billName: bill.billName,
+          totalAmount: parseFloat(bill.totalAmount),
+          status: bill.status,
+          category: bill.category?.categoryName,
+          isHost,
+          hostName: bill.host.name,
+          hostAccount: isHost ? null : bill.host.bniAccountNumber,
+          yourShare: participant ? parseFloat(participant.amountShare) : 0,
+          paymentStatus: participant?.paymentStatus || "not_participant",
+          paymentDeadline,
+          isExpired,
+          canSchedule: bill.allowScheduledPayment,
+          createdAt: bill.createdAt,
+        };
+      }),
     });
   } catch (error) {
     console.error("Get bills error:", error);
     res.status(500).json({ error: "Failed to get bills" });
   }
 });
+
+
 
 // 12. Edit bill
 router.put("/:billId", authenticateToken, async (req, res) => {
