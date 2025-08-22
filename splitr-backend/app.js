@@ -66,30 +66,16 @@ app.get("/health", async (req, res) => {
 // Import routes
 const indexRouter = require("./routes/index");
 const adminRouter = require("./routes/admin");
+const { notFoundHandler, errorHandler } = require("./middleware/error.middleware");
 
 // Use routes
 app.use("/", indexRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/mobile", require("./routes/mobile"));
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Endpoint not found",
-    available_endpoints: ["ERROR API GAADA"],
-  });
-});
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Error:", err);
-  res.status(err.status || 500).json({
-    error: "Internal server error",
-    message:
-      process.env.NODE_ENV === "development"
-        ? err.message
-        : "Something went wrong",
-  });
-});
+// Error handlers
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
