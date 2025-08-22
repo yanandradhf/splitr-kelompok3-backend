@@ -150,7 +150,220 @@ router.post("/create", authenticateToken, async (req, res) => {
   }
 });
 
-// 4. Join Bill
+// 4.1 Get Total Amount by Bill Status
+router.get('/totals', authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+    
+    const bills = await prisma.bill.findMany({
+      where: {
+        OR: [
+          { hostId: userId },
+          { billParticipants: { some: { userId } } }
+        ]
+      },
+      select: {
+        status: true,
+        hostId: true,
+        totalAmount: true
+      }
+    });
+
+    // Manually group by status and isHost
+    const grouped = bills.reduce((acc, bill) => {
+      const key = `${bill.status}_${bill.hostId === userId}`;
+      if (!acc[key]) {
+        acc[key] = {
+          status: bill.status,
+          isHost: bill.hostId === userId,
+          totalAmount: 0,
+          billCount: 0
+        };
+      }
+      acc[key].totalAmount += parseFloat(bill.totalAmount);
+      acc[key].billCount += 1;
+      return acc;
+    }, {});
+
+    const formattedResult = Object.values(grouped);
+
+    res.json({
+      success: true,
+      data: formattedResult
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+//4.2 Get User Bills Grouped for activity
+router.get("/activity", authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+    const bills = await prisma.bill.findMany({
+      where: {
+        OR: [
+          { hostId: userId },
+          { billParticipants: { some: { userId } } },
+        ],
+      },
+      include: {
+        billItems: {
+          include: {
+            itemAssignments: {
+              include: {
+                participant: {
+                  include: {
+                    user: {
+                      select: { name: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        host: true,
+        billParticipants: {
+          include: {
+            user: {
+              select: {
+                userId: true,
+                name: true,
+                bniAccountNumber: true,
+              },
+            },
+          },
+        },
+        category: true,
+        group: true,
+        payments: {
+          where: { status: "completed" },
+        },
+        scheduledPayments: {
+          where: { status: "scheduled" },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Transform bills data with full details
+    const billsData = bills.map(bill => {
+      const userParticipant = bill.billParticipants.find(p => p.userId === userId);
+      const isHost = bill.hostId === userId;
+      
+      // Calculate payment summary
+      const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed");
+      const scheduledParticipants = bill.billParticipants.filter(p => p.paymentStatus === "scheduled");
+      const totalPaid = completedParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0);
+      const totalScheduled = scheduledParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0);
+      const remainingAmount = parseFloat(bill.totalAmount) - totalPaid;
+      
+      return {
+        billId: bill.billId,
+        billCode: bill.billCode,
+        billName: bill.billName,
+        totalAmount: parseFloat(bill.totalAmount),
+        maxPaymentDate: bill.maxPaymentDate,
+        allowScheduledPayment: bill.allowScheduledPayment,
+        status: bill.status,
+        receiptImageUrl: bill.receiptImageUrl,
+        category: {
+          name: bill.category?.categoryName,
+          icon: bill.category?.categoryIcon,
+        },
+        group: bill.group ? {
+          groupId: bill.group.groupId,
+          groupName: bill.group.groupName,
+        } : null,
+        host: {
+          userId: bill.host.userId,
+          name: bill.host.name,
+          account: bill.host.bniAccountNumber,
+        },
+        isHost,
+        items: bill.billItems.map(item => ({
+          itemId: item.itemId,
+          itemName: item.itemName,
+          price: parseFloat(item.price),
+          quantity: item.quantity,
+          category: item.category,
+          ocrConfidence: item.ocrConfidence,
+          isVerified: item.isVerified,
+          assignments: item.itemAssignments.map(assignment => ({
+            participantName: assignment.participant.user?.name || assignment.participant.tempName,
+            quantity: assignment.quantityAssigned,
+            amount: parseFloat(assignment.amountAssigned),
+          })),
+        })),
+        participants: bill.billParticipants.map(p => ({
+          participantId: p.participantId,
+          userId: p.userId,
+          name: p.user?.name || p.tempName,
+          account: p.user?.bniAccountNumber,
+          amountShare: parseFloat(p.amountShare),
+          paymentStatus: p.paymentStatus,
+          paidAt: p.paidAt,
+          joinedAt: p.joinedAt,
+        })),
+        yourShare: userParticipant ? parseFloat(userParticipant.amountShare) : 0,
+        yourStatus: userParticipant?.paymentStatus || "not_participant",
+        paymentSummary: {
+          totalPaid,
+          totalScheduled,
+          remainingAmount,
+          completedPayments: bill.payments.length,
+          scheduledPayments: bill.scheduledPayments.length,
+        },
+        createdAt: bill.createdAt,
+        updatedAt: bill.updatedAt,
+      };
+    });
+
+    // Group by status -> isHost -> bills
+    const groupedBills = billsData.reduce((acc, bill) => {
+      const status = bill.status;
+      const hostType = bill.isHost ? "hosted" : "joined";
+      
+      if (!acc[status]) {
+        acc[status] = {};
+      }
+      if (!acc[status][hostType]) {
+        acc[status][hostType] = [];
+      }
+      
+      acc[status][hostType].push(bill);
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: groupedBills,
+      summary: {
+        total: billsData.length,
+        byStatus: {
+          active: billsData.filter(b => b.status === "active").length,
+          completed: billsData.filter(b => b.status === "completed").length,
+          cancelled: billsData.filter(b => b.status === "cancelled").length,
+        },
+        byRole: {
+          hosted: billsData.filter(b => b.isHost).length,
+          joined: billsData.filter(b => !b.isHost).length,
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Get bills error:", error);
+    res.status(500).json({ error: "Failed to get bills" });
+  }
+});
+
+// 5. Join Bill
 router.post("/join", authenticateToken, async (req, res) => {
   try {
     const { billCode } = req.body;
@@ -312,7 +525,7 @@ router.post("/join", authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Get Bill Details
+// 6. Get Bill Details
 router.get("/:billId", authenticateToken, async (req, res) => {
   try {
     const { billId } = req.params;
