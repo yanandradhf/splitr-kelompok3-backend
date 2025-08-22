@@ -45,6 +45,12 @@ router.get("/", authenticateToken, async (req, res) => {
               billName: true,
             },
           },
+          group: {
+            select: {
+              groupId: true,
+              groupName: true,
+            },
+          },
         },
       }),
       prisma.notification.count({ where }),
@@ -61,6 +67,9 @@ router.get("/", authenticateToken, async (req, res) => {
         message: notif.message,
         billId: notif.billId,
         billName: notif.bill?.billName,
+        groupId: notif.groupId,
+        groupName: notif.group?.groupName,
+        metadata: notif.metadata,
         isRead: notif.isRead,
         sentAt: notif.sentAt,
         createdAt: notif.createdAt,
@@ -124,7 +133,51 @@ router.put("/read-all", authenticateToken, async (req, res) => {
   }
 });
 
-// 4. Create Test Notifications (for testing)
+// 4. Handle Group Notification Actions
+router.post("/group-action", authenticateToken, async (req, res) => {
+  try {
+    const { notificationId, action } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    if (!notificationId || !action) {
+      return res.status(400).json({ error: "Notification ID and action required" });
+    }
+
+    // Get notification
+    const notification = await prisma.notification.findFirst({
+      where: {
+        notificationId,
+        userId,
+        type: "group_invitation",
+      },
+    });
+
+    if (!notification) {
+      return res.status(404).json({ error: "Group invitation notification not found" });
+    }
+
+    if (action === "view_group") {
+      // Just mark as read
+      await prisma.notification.update({
+        where: { notificationId },
+        data: { isRead: true },
+      });
+
+      return res.json({ 
+        message: "Notification marked as read",
+        groupId: notification.groupId 
+      });
+    }
+
+    return res.status(400).json({ error: "Invalid action. Only 'view_group' is supported." });
+  } catch (error) {
+    console.error("Group notification action error:", error);
+    res.status(500).json({ error: "Failed to handle group action" });
+  }
+});
+
+// 5. Create Test Notifications (for testing)
 router.post("/test", authenticateToken, async (req, res) => {
   try {
     const prisma = req.prisma;

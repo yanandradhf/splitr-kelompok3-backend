@@ -135,6 +135,7 @@ model Group {
   creator User          @relation("GroupCreator", fields: [creatorId], references: [userId], onDelete: Cascade)
   members GroupMember[]
   bills   Bill[]
+  notifications Notification[]
 
   @@map("groups")
 }
@@ -277,9 +278,11 @@ model Notification {
   notificationId String    @id @default(uuid()) @map("notification_id")
   userId         String    @map("user_id")
   billId         String?   @map("bill_id")
-  type           String    @db.VarChar(50) // payment_reminder, payment_success, payment_failed, bill_complete, follow_up
+  groupId        String?   @map("group_id")
+  type           String    @db.VarChar(50) // payment_reminder, payment_success, payment_failed, bill_complete, follow_up, group_invitation, group_member_joined, group_member_left, group_updated, group_deleted
   title          String    @db.VarChar(200)
   message        String
+  metadata       Json?     @map("metadata") // for action buttons and extra data
   isRead         Boolean   @default(false) @map("is_read")
   sentAt         DateTime? @map("sent_at")
   createdAt      DateTime  @default(now()) @map("created_at")
@@ -287,6 +290,7 @@ model Notification {
   // Relations
   user User  @relation(fields: [userId], references: [userId], onDelete: Cascade)
   bill Bill? @relation(fields: [billId], references: [billId], onDelete: SetNull)
+  group Group? @relation(fields: [groupId], references: [groupId], onDelete: SetNull)
 
   @@map("notifications")
 }
