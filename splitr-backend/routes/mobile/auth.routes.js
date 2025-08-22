@@ -519,6 +519,38 @@ router.get("/bni-balance/:accountNumber", async (req, res) => {
   }
 });
 
+// 7.1. Verify PIN
+router.post("/verify-pin", authenticateToken, async (req, res) => {
+  try {
+    const { pin } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    if (!pin) {
+      return res.status(400).json({ error: "PIN required" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: { encryptedPinHash: true },
+    });
+
+    if (!user || !user.encryptedPinHash) {
+      return res.status(404).json({ error: "PIN not set" });
+    }
+
+    const isValidPin = await bcrypt.compare(pin, user.encryptedPinHash);
+    if (!isValidPin) {
+      return res.status(401).json({ error: "Invalid PIN" });
+    }
+
+    res.json({ verified: true, message: "PIN verified successfully" });
+  } catch (error) {
+    console.error("Verify PIN error:", error);
+    res.status(500).json({ error: "PIN verification failed" });
+  }
+});
+
 // 8. Logout
 router.post("/logout", authenticateToken, async (req, res) => {
   try {
