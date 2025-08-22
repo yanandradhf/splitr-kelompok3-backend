@@ -1,0 +1,1150 @@
+{
+	"info": {
+		"_postman_id": "splitr-complete-flow",
+		"name": "Splitr Complete Flow - Host & Participant",
+		"description": "Complete testing flow: Host creates bill → Participant views & pays → Notifications → All POVs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "host_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "participant_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "billId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "paymentId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "🔐 Authentication",
+			"item": [
+				{
+					"name": "Login Host (Aulia)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('host_token', response.token);",
+									"    console.log('✅ Host logged in:', response.user.name);",
+									"    console.log('🏦 Account:', response.user.bniAccountNumber);",
+									"} else {",
+									"    console.log('❌ Host login failed');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"aulia\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login Participant (Akmal)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('participant_token', response.token);",
+									"    console.log('✅ Participant logged in:', response.user.name);",
+									"    console.log('🏦 Account:', response.user.bniAccountNumber);",
+									"} else {",
+									"    console.log('❌ Participant login failed');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"akmal\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🏠 Host POV - Bill Management",
+			"item": [
+				{
+					"name": "Create Bill with Participants",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('billId', response.billId);",
+									"    console.log('✅ Bill Created Successfully');",
+									"    console.log('📋 Bill Name:', response.billName);",
+									"    console.log('🔢 Bill Code:', response.billCode);",
+									"    console.log('💰 Total Amount: Rp', response.totalAmount.toLocaleString());",
+									"    console.log('⏰ Allow Scheduled:', response.allowScheduledPayment);",
+									"    console.log('👥 Participants Added:', response.participantsAdded);",
+									"    console.log('🔗 Invite Link:', response.inviteLink);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"billName\": \"Makan Siang Warmindo\",\n  \"categoryId\": null,\n  \"totalAmount\": 118000,\n  \"maxPaymentDate\": \"2024-12-31T23:59:59Z\",\n  \"allowScheduledPayment\": false,\n  \"splitMethod\": \"custom\",\n  \"currency\": \"IDR\",\n  \"items\": [\n    {\n      \"tempItemId\": \"ayam_001\",\n      \"itemName\": \"Ayam Bakar\",\n      \"price\": 18000,\n      \"quantity\": 2,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"teh_001\",\n      \"itemName\": \"Es Teh Manis\",\n      \"price\": 5000,\n      \"quantity\": 4,\n      \"category\": \"beverage\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"ikan_001\",\n      \"itemName\": \"Ikan Bakar\",\n      \"price\": 25000,\n      \"quantity\": 2,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"nasi_001\",\n      \"itemName\": \"Nasi Putih\",\n      \"price\": 3000,\n      \"quantity\": 4,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    }\n  ],\n  \"participants\": [\n    {\n      \"username\": \"akmal\",\n      \"items\": [\n        {\n          \"tempItemId\": \"ayam_001\",\n          \"quantity\": 1,\n          \"amount\": 18000\n        },\n        {\n          \"tempItemId\": \"teh_001\",\n          \"quantity\": 2,\n          \"amount\": 10000\n        },\n        {\n          \"tempItemId\": \"ikan_001\",\n          \"quantity\": 1,\n          \"amount\": 25000\n        },\n        {\n          \"tempItemId\": \"nasi_001\",\n          \"quantity\": 2,\n          \"amount\": 6000\n        }\n      ]\n    }\n  ],\n  \"fees\": {\n    \"taxPct\": 10,\n    \"servicePct\": 0,\n    \"discountPct\": 0,\n    \"discountNominal\": 0,\n    \"subTotal\": 108000,\n    \"taxAmount\": 10800,\n    \"serviceAmount\": 0,\n    \"discountAmount\": 0\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"create"
+							]
+						}
+					}
+				},
+				{
+					"name": "Host View Bill Details",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Host Bill Details Retrieved');",
+									"    console.log('📋 Bill:', response.billName);",
+									"    console.log('💰 Total: Rp', response.totalAmount.toLocaleString());",
+									"    console.log('🏠 Is Host:', response.isHost);",
+									"    console.log('👥 Participants:', response.participants.length);",
+									"    console.log('💳 Payment Summary:');",
+									"    console.log('  - Total Paid: Rp', response.paymentSummary.totalPaid.toLocaleString());",
+									"    console.log('  - Remaining: Rp', response.paymentSummary.remainingAmount.toLocaleString());",
+									"    console.log('  - Completed Payments:', response.paymentSummary.completedPayments);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/{{billId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"{{billId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Host View All Bills",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Host Bills Retrieved');",
+									"    console.log('📋 Total Bills:', response.bills.length);",
+									"    response.bills.forEach((bill, index) => {",
+									"        console.log(`${index + 1}. ${bill.billName} - ${bill.isHost ? 'HOST' : 'PARTICIPANT'}`);",
+									"        console.log(`   Status: ${bill.status} | Your Share: Rp ${bill.yourShare.toLocaleString()}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills?type=hosted",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "hosted"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "👤 Participant POV - View & Pay",
+			"item": [
+				{
+					"name": "View Assigned Bills",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Participant Assigned Bills');",
+									"    console.log('📋 Total Assigned Bills:', response.assignedBills.length);",
+									"    response.assignedBills.forEach((bill, index) => {",
+									"        console.log(`\\n${index + 1}. ${bill.billName}`);",
+									"        console.log(`   Host: ${bill.hostName} (${bill.hostAccount})`);",
+									"        console.log(`   Your Share: Rp ${bill.yourShare.toLocaleString()}`);",
+									"        console.log(`   Status: ${bill.paymentStatus}`);",
+									"        console.log(`   Deadline: ${new Date(bill.paymentDeadline).toLocaleString()}`);",
+									"        console.log(`   Items: ${bill.itemCount} items`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/assigned",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"assigned"
+							]
+						}
+					}
+				},
+				{
+					"name": "View Bill Details (Participant)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Participant Bill Details');",
+									"    console.log('📋 Bill:', response.billName);",
+									"    console.log('🏠 Host:', response.host.name);",
+									"    console.log('💰 Your Share: Rp', response.yourShare.toLocaleString());",
+									"    console.log('📊 Payment Status:', response.yourStatus);",
+									"    console.log('🍽️ Items:', response.items.length);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/{{billId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"{{billId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Payment Info",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Payment Info Retrieved');",
+									"    console.log('💰 Amount to Pay: Rp', response.paymentInfo.yourAmount.toLocaleString());",
+									"    console.log('🏦 Host Account:', response.paymentInfo.hostAccount);",
+									"    console.log('⏰ Deadline:', new Date(response.paymentInfo.paymentDeadline).toLocaleString());",
+									"    console.log('📅 Can Schedule:', response.paymentInfo.canSchedule);",
+									"    console.log('⚠️ Is Expired:', response.paymentInfo.isExpired);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/payments/info/{{billId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"payments",
+								"info",
+								"{{billId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Make Payment (PIN: 123456)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('paymentId', response.payment.paymentId);",
+									"    console.log('✅ Payment Successful!');",
+									"    console.log('💳 Transaction ID:', response.payment.transactionId);",
+									"    console.log('🏦 BNI Reference:', response.payment.bniReferenceNumber);",
+									"    console.log('💰 Amount Paid: Rp', response.payment.amount.toLocaleString());",
+									"    console.log('📅 Paid At:', new Date(response.payment.paidAt).toLocaleString());",
+									"    console.log('🎯 Status:', response.payment.status);",
+									"    console.log('🏠 Paid to:', response.bill.hostName);",
+									"} else {",
+									"    console.log('❌ Payment Failed:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"billId\": \"{{billId}}\",\n  \"amount\": 59000,\n  \"pin\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/payments/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"payments",
+								"create"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "💳 Payment Management",
+			"item": [
+				{
+					"name": "Payment History (Participant)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Payment History Retrieved');",
+									"    console.log('💳 Total Payments:', response.payments.length);",
+									"    response.payments.forEach((payment, index) => {",
+									"        console.log(`${index + 1}. ${payment.billName}`);",
+									"        console.log(`   Amount: Rp ${payment.amount.toLocaleString()}`);",
+									"        console.log(`   Status: ${payment.status}`);",
+									"        console.log(`   Date: ${new Date(payment.paidAt).toLocaleString()}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/payments/history?limit=5",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"payments",
+								"history"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "5"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Payment Status Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Payment Status Retrieved');",
+									"    console.log('💳 Transaction ID:', response.payment.transactionId);",
+									"    console.log('💰 Amount: Rp', response.payment.amount.toLocaleString());",
+									"    console.log('🎯 Status:', response.payment.status);",
+									"    console.log('📅 Paid At:', new Date(response.payment.paidAt).toLocaleString());",
+									"    console.log('🏦 BNI Reference:', response.payment.bniReferenceNumber);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/payments/{{paymentId}}/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"payments",
+								"{{paymentId}}",
+								"status"
+							]
+						}
+					}
+				},
+				{
+					"name": "Schedule Payment (Pay Later)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Payment Scheduled Successfully');",
+									"    console.log('📅 Scheduled Date:', new Date(response.scheduledPayment.scheduledDate).toLocaleString());",
+									"    console.log('💰 Amount: Rp', response.scheduledPayment.amount.toLocaleString());",
+									"    console.log('🎯 Status:', response.scheduledPayment.status);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"billId\": \"{{billId}}\",\n  \"amount\": 59000,\n  \"scheduledDate\": \"2024-12-25T10:00:00Z\",\n  \"pin\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/payments/schedule",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"payments",
+								"schedule"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🔔 Notifications",
+			"item": [
+				{
+					"name": "Host Notifications",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Host Notifications Retrieved');",
+									"    console.log('🔔 Total Notifications:', response.notifications.length);",
+									"    console.log('📊 Unread Count:', response.unreadCount);",
+									"    response.notifications.forEach((notif, index) => {",
+									"        console.log(`${index + 1}. ${notif.title} ${notif.isRead ? '' : '(NEW)'}`);",
+									"        console.log(`   Type: ${notif.type}`);",
+									"        console.log(`   Message: ${notif.message}`);",
+									"        console.log(`   Date: ${new Date(notif.createdAt).toLocaleString()}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications?limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Participant Notifications",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Participant Notifications Retrieved');",
+									"    console.log('🔔 Total Notifications:', response.notifications.length);",
+									"    console.log('📊 Unread Count:', response.unreadCount);",
+									"    response.notifications.forEach((notif, index) => {",
+									"        console.log(`${index + 1}. ${notif.title} ${notif.isRead ? '' : '(NEW)'}`);",
+									"        console.log(`   Type: ${notif.type}`);",
+									"        console.log(`   Message: ${notif.message}`);",
+									"        console.log(`   Date: ${new Date(notif.createdAt).toLocaleString()}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/notifications?limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"notifications"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "👥 Friends & Groups",
+			"item": [
+				{
+					"name": "Get Friends List",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Friends List Retrieved');",
+									"    console.log('👥 Total Friends:', response.friends.length);",
+									"    response.friends.forEach((friend, index) => {",
+									"        console.log(`${index + 1}. ${friend.name} (@${friend.username})`);",
+									"        console.log(`   Account: ${friend.bniAccountNumber}`);",
+									"        console.log(`   Status: ${friend.status}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/friends",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"friends"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Groups",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Groups Retrieved');",
+									"    console.log('👫 Total Groups:', response.groups.length);",
+									"    response.groups.forEach((group, index) => {",
+									"        console.log(`${index + 1}. ${group.groupName}`);",
+									"        console.log(`   Members: ${group.memberCount}`);",
+									"        console.log(`   Role: ${group.isCreator ? 'Creator' : 'Member'}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/groups",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"groups"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📊 Profile & Activities",
+			"item": [
+				{
+					"name": "Get Profile (Host)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Host Profile Retrieved');",
+									"    console.log('👤 Name:', response.user.name);",
+									"    console.log('📧 Email:', response.user.email);",
+									"    console.log('📱 Phone:', response.user.phone);",
+									"    console.log('🏦 BNI Account:', response.user.bniAccountNumber);",
+									"    console.log('🌟 Verified:', response.user.isVerified);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"profile"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Activities (Host)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Host Activities Retrieved');",
+									"    console.log('📊 Total Activities:', response.activities.length);",
+									"    response.activities.forEach((activity, index) => {",
+									"        console.log(`${index + 1}. ${activity.title}`);",
+									"        console.log(`   Type: ${activity.activityType}`);",
+									"        console.log(`   Description: ${activity.description}`);",
+									"        console.log(`   Date: ${new Date(activity.createdAt).toLocaleString()}`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/activities?limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"activities"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🔄 Post-Payment Verification",
+			"item": [
+				{
+					"name": "Host Check Updated Bill",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Host Bill Status After Payment');",
+									"    console.log('📋 Bill:', response.billName);",
+									"    console.log('💰 Total: Rp', response.totalAmount.toLocaleString());",
+									"    console.log('💳 Payment Summary:');",
+									"    console.log('  - Total Paid: Rp', response.paymentSummary.totalPaid.toLocaleString());",
+									"    console.log('  - Remaining: Rp', response.paymentSummary.remainingAmount.toLocaleString());",
+									"    console.log('  - Completed Payments:', response.paymentSummary.completedPayments);",
+									"    console.log('👥 Participants Status:');",
+									"    response.participants.forEach(p => {",
+									"        console.log(`  - ${p.name}: ${p.paymentStatus} (Rp ${p.amountShare.toLocaleString()})`);",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/{{billId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"{{billId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Participant Check Updated Status",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Participant Status After Payment');",
+									"    response.assignedBills.forEach((bill, index) => {",
+									"        if (bill.billId === pm.collectionVariables.get('billId')) {",
+									"            console.log(`📋 Bill: ${bill.billName}`);",
+									"            console.log(`💰 Your Share: Rp ${bill.yourShare.toLocaleString()}`);",
+									"            console.log(`🎯 Payment Status: ${bill.paymentStatus}`);",
+									"            console.log(`📅 Paid At: ${bill.paidAt ? new Date(bill.paidAt).toLocaleString() : 'Not paid'}`);",
+									"        }",
+									"    });",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/assigned",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"assigned"
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}

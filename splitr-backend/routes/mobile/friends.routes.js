@@ -1,5 +1,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
+const NotificationService = require("../../services/notification.service");
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
@@ -109,7 +110,7 @@ router.get("/search", authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(400).json({ 
         error: "User not found",
         message: `No user found with username '${username}'`
       });
@@ -165,7 +166,7 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
     });
 
     if (!friendUser) {
-      return res.status(404).json({ 
+      return res.status(400).json({ 
         error: "User not found",
         message: `No user found with username '${username}'`
       });
@@ -175,46 +176,31 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Cannot add yourself as friend" });
     }
 
-    // Check if friendship already exists
+    // Check if you already added this user
     const existingFriendship = await prisma.friend.findFirst({
       where: {
-        OR: [
-          { userId, friendUserId: friendUser.userId },
-          { userId: friendUser.userId, friendUserId: userId },
-        ],
+        userId,
+        friendUserId: friendUser.userId,
       },
     });
 
     if (existingFriendship) {
       return res.status(400).json({ 
-        error: "Already friends",
-        message: `You are already friends with ${friendUser.name}`
+        error: "Already added",
+        message: `You already added ${friendUser.name} to your friends`
       });
     }
 
-    // Get current user info
-    const currentUser = await prisma.user.findUnique({
-      where: { userId },
-      select: { name: true },
-    });
-
-    // Create bidirectional friendship
-    await prisma.friend.createMany({
-      data: [
-        { userId, friendUserId: friendUser.userId, status: "active" },
-        { userId: friendUser.userId, friendUserId: userId, status: "active" },
-      ],
-    });
-
-    // Create notification for the friend
-    await prisma.notification.create({
+    // Create one-way friendship (only from current user to target user)
+    await prisma.friend.create({
       data: {
-        userId: friendUser.userId,
-        type: "friend_request_accepted",
-        title: "New Friend Added",
-        message: `${currentUser.name} added you as a friend`,
+        userId,
+        friendUserId: friendUser.userId,
+        status: "active"
       },
     });
+
+    // No notification needed for one-way friendship
 
     res.json({
       success: true,
@@ -257,43 +243,28 @@ router.post("/add", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Check if friendship already exists
+    // Check if you already added this user
     const existingFriendship = await prisma.friend.findFirst({
       where: {
-        OR: [
-          { userId, friendUserId },
-          { userId: friendUserId, friendUserId: userId },
-        ],
+        userId,
+        friendUserId,
       },
     });
 
     if (existingFriendship) {
-      return res.status(400).json({ error: "Friendship already exists" });
+      return res.status(400).json({ error: "Already added to your friends" });
     }
 
-    // Get current user info
-    const currentUser = await prisma.user.findUnique({
-      where: { userId },
-      select: { name: true },
-    });
-
-    // Create bidirectional friendship
-    await prisma.friend.createMany({
-      data: [
-        { userId, friendUserId, status: "active" },
-        { userId: friendUserId, friendUserId: userId, status: "active" },
-      ],
-    });
-
-    // Create notification for the friend
-    await prisma.notification.create({
+    // Create one-way friendship (only from current user to target user)
+    await prisma.friend.create({
       data: {
-        userId: friendUserId,
-        type: "friend_request_accepted",
-        title: "New Friend Added",
-        message: `${currentUser.name} added you as a friend`,
+        userId,
+        friendUserId,
+        status: "active"
       },
     });
+
+    // No notification needed for one-way friendship
 
     res.json({
       message: "Friend added successfully",
@@ -316,13 +287,11 @@ router.delete("/remove/:friendUserId", authenticateToken, async (req, res) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    // Remove bidirectional friendship
+    // Remove one-way friendship (only from current user)
     await prisma.friend.deleteMany({
       where: {
-        OR: [
-          { userId, friendUserId },
-          { userId: friendUserId, friendUserId: userId },
-        ],
+        userId,
+        friendUserId,
       },
     });
 

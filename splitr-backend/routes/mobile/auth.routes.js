@@ -446,7 +446,54 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// 7. Get BNI Account Balance
+// 7. Get My BNI Account Details
+router.get("/my-account", authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Get user's BNI account number
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: { bniAccountNumber: true, name: true },
+    });
+
+    if (!user || !user.bniAccountNumber) {
+      return res.status(404).json({ error: "BNI account not found" });
+    }
+
+    // Get account details
+    const account = await prisma.bniDummyAccount.findUnique({
+      where: { nomorRekening: user.bniAccountNumber },
+    });
+
+    if (!account) {
+      return res.status(404).json({ error: "Account details not found" });
+    }
+
+    // Get branch details separately
+    const branch = await prisma.bniBranch.findUnique({
+      where: { branchCode: account.branchCode },
+    });
+
+    res.json({
+      accountNumber: account.nomorRekening,
+      accountName: account.namaRekening,
+      balance: parseFloat(account.saldo),
+      branchCode: account.branchCode,
+      branch: {
+        branchName: branch?.branchName,
+        city: branch?.city,
+        province: branch?.province,
+      },
+    });
+  } catch (error) {
+    console.error("Get account error:", error);
+    res.status(500).json({ error: "Failed to get account details" });
+  }
+});
+
+// 8. Get BNI Account Balance (by account number)
 router.get("/bni-balance/:accountNumber", async (req, res) => {
   try {
     const { accountNumber } = req.params;

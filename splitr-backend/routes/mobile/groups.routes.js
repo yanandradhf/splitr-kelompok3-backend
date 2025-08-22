@@ -1,5 +1,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
+const NotificationService = require("../../services/notification.service");
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
@@ -100,6 +101,27 @@ router.post("/create", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "At least one member must be added besides the creator." });
     }
 
+    // Get creator info for notifications
+    const creator = await prisma.user.findUnique({
+      where: { userId },
+      select: { name: true },
+    });
+
+    // Validate that memberIds are from user's friends
+    const friendIds = await prisma.friend.findMany({
+      where: { userId },
+      select: { friendUserId: true },
+    });
+    const validFriendIds = friendIds.map(f => f.friendUserId);
+    const invalidMembers = memberIds.filter(id => !validFriendIds.includes(id));
+    
+    if (invalidMembers.length > 0) {
+      return res.status(400).json({ 
+        error: "Can only add friends to group",
+        message: "Some selected users are not in your friends list"
+      });
+    }
+
     const group = await prisma.group.create({
       data: {
         creatorId: userId,
@@ -124,6 +146,15 @@ router.post("/create", authenticateToken, async (req, res) => {
         },
       },
     });
+
+    // Send notifications to added members
+    const notificationService = new NotificationService(prisma);
+    await notificationService.sendGroupInvitation(
+      memberIds,
+      group.groupId,
+      groupName,
+      creator.name
+    );
 
     res.json({
       groupId: group.groupId,
@@ -178,6 +209,21 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "User is already a member" });
     }
 
+    // Validate that new member is a friend
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        userId,
+        friendUserId: newMemberId,
+      },
+    });
+
+    if (!friendship) {
+      return res.status(400).json({ 
+        error: "Can only add friends to group",
+        message: "User must be in your friends list to be added to group"
+      });
+    }
+
     // Add member
     await prisma.groupMember.create({
       data: {
@@ -185,6 +231,27 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
         userId: newMemberId,
       },
     });
+
+    // Get user info for notifications
+    const [creator, newMember] = await Promise.all([
+      prisma.user.findUnique({
+        where: { userId },
+        select: { name: true },
+      }),
+      prisma.user.findUnique({
+        where: { userId: newMemberId },
+        select: { name: true },
+      }),
+    ]);
+
+    // Send notifications
+    const notificationService = new NotificationService(prisma);
+    await notificationService.sendGroupInvitation(
+      [newMemberId],
+      group.groupId,
+      group.groupName,
+      creator.name
+    );
 
     res.json({ message: "Member added successfully" });
   } catch (error) {
@@ -233,6 +300,18 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
       return res.status(400).json({ error: "Group creator cannot delete themselves. They must delete the group instead." });
     }
 
+    // Get user info for notifications
+    const [creator, removedMember] = await Promise.all([
+      prisma.user.findUnique({
+        where: { userId },
+        select: { name: true },
+      }),
+      prisma.user.findUnique({
+        where: { userId: memberIdToDelete },
+        select: { name: true },
+      }),
+    ]);
+
     // Delete the member
     await prisma.groupMember.delete({
       where: {
@@ -242,6 +321,15 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
         },
       },
     });
+
+    // Send notification to removed member
+    const notificationService = new NotificationService(prisma);
+    await notificationService.sendMemberRemoved(
+      memberIdToDelete,
+      group.groupId,
+      group.groupName,
+      creator.name
+    );
 
     res.json({ message: "Member removed successfully" });
   } catch (error) {
@@ -302,6 +390,13 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Group not found" });
     }
 
+    // Get user's friends to show friendship status
+    const userFriends = await prisma.friend.findMany({
+      where: { userId },
+      select: { friendUserId: true },
+    });
+    const friendIds = userFriends.map(f => f.friendUserId);
+
     res.json({
       groupId: group.groupId,
       groupName: group.groupName,
@@ -313,6 +408,9 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
         name: member.user.name,
         email: member.user.email,
         isCreator: member.isCreator,
+        isCurrentUser: member.user.userId === userId,
+        isFriend: friendIds.includes(member.user.userId),
+        canAddFriend: member.user.userId !== userId && !friendIds.includes(member.user.userId),
         joinedAt: member.joinedAt,
       })),
       recentBills: group.bills,
@@ -372,6 +470,7 @@ router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
           include: {
             user: {
               select: {
+                userId: true,
                 name: true,
               },
             },
@@ -379,6 +478,26 @@ router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
         },
       },
     });
+
+    // Get creator info and send notifications to all members except creator
+    const creator = await prisma.user.findUnique({
+      where: { userId },
+      select: { name: true },
+    });
+
+    const memberIds = updatedGroup.members
+      .filter(member => member.userId !== userId)
+      .map(member => member.userId);
+
+    if (memberIds.length > 0) {
+      const notificationService = new NotificationService(prisma);
+      await notificationService.sendGroupUpdated(
+        memberIds,
+        updatedGroup.groupId,
+        updatedGroup.groupName,
+        creator.name
+      );
+    }
 
     res.json({
       message: "Group updated successfully",
@@ -398,7 +517,145 @@ router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
   }
 });
 
-// 6. Delete Group
+// 6. Add Friend from Group Member
+router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res) => {
+  try {
+    const { groupId, memberId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Verify user is in the group
+    const membership = await prisma.groupMember.findFirst({
+      where: {
+        groupId,
+        userId,
+      },
+    });
+
+    if (!membership) {
+      return res.status(403).json({ error: "You are not a member of this group" });
+    }
+
+    // Verify target user is also in the group
+    const targetMembership = await prisma.groupMember.findFirst({
+      where: {
+        groupId,
+        userId: memberId,
+      },
+    });
+
+    if (!targetMembership) {
+      return res.status(404).json({ error: "Target user is not in this group" });
+    }
+
+    if (memberId === userId) {
+      return res.status(400).json({ error: "Cannot add yourself as friend" });
+    }
+
+    // Check if already friends
+    const existingFriendship = await prisma.friend.findFirst({
+      where: {
+        userId,
+        friendUserId: memberId,
+      },
+    });
+
+    if (existingFriendship) {
+      return res.status(400).json({ error: "Already friends" });
+    }
+
+    // Add as friend (one-way)
+    await prisma.friend.create({
+      data: {
+        userId,
+        friendUserId: memberId,
+        status: "active"
+      },
+    });
+
+    // No notification needed for one-way friendship
+
+    res.json({ message: "Friend added successfully" });
+  } catch (error) {
+    console.error("Add friend from group error:", error);
+    res.status(500).json({ error: "Failed to add friend" });
+  }
+});
+
+// 7. Leave Group (for members)
+router.post("/:groupId/leave", authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Get group info
+    const group = await prisma.group.findUnique({
+      where: { groupId },
+      select: {
+        groupId: true,
+        groupName: true,
+        creatorId: true,
+      },
+    });
+
+    if (!group) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    // Prevent creator from leaving (they must delete group instead)
+    if (group.creatorId === userId) {
+      return res.status(400).json({ 
+        error: "Group creator cannot leave",
+        message: "As the creator, you must delete the group instead of leaving it"
+      });
+    }
+
+    // Check if user is a member
+    const membership = await prisma.groupMember.findFirst({
+      where: {
+        groupId,
+        userId,
+      },
+    });
+
+    if (!membership) {
+      return res.status(404).json({ error: "You are not a member of this group" });
+    }
+
+    // Remove user from group
+    await prisma.groupMember.delete({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId,
+        },
+      },
+    });
+
+    // Get user info for notification
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: { name: true },
+    });
+
+    // Notify creator
+    const notificationService = new NotificationService(prisma);
+    await notificationService.sendMemberLeft(
+      group.creatorId,
+      group.groupId,
+      group.groupName,
+      user.name
+    );
+
+    res.json({ message: "Left group successfully" });
+  } catch (error) {
+    console.error("Leave group error:", error);
+    res.status(500).json({ error: "Failed to leave group" });
+  }
+});
+
+// 8. Delete Group
 router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
   try {
     const { groupId } = req.params; 
@@ -425,6 +682,37 @@ router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
     if (groupToDelete.creatorId !== userId) {
 
       return res.status(403).json({ error: "Only the group creator can delete this group" });
+    }
+
+    // Get group info and members for notifications
+    const groupWithMembers = await prisma.group.findUnique({
+      where: { groupId },
+      include: {
+        members: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    const creator = await prisma.user.findUnique({
+      where: { userId },
+      select: { name: true },
+    });
+
+    const memberIds = groupWithMembers.members
+      .filter(member => member.userId !== userId)
+      .map(member => member.userId);
+
+    // Send notifications before deleting
+    if (memberIds.length > 0) {
+      const notificationService = new NotificationService(prisma);
+      await notificationService.sendGroupDeleted(
+        memberIds,
+        groupToDelete.groupName || groupWithMembers.groupName,
+        creator.name
+      );
     }
 
     await prisma.groupMember.deleteMany({
