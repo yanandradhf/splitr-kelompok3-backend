@@ -234,22 +234,16 @@ router.post("/create", authenticateToken, async (req, res) => {
       const participantNotifications = [];
       if (participants && participants.length > 0) {
         for (const participantData of participants) {
-          const { username, items: assignedItems } = participantData;
+          const { userId: participantUserId, items: assignedItems } = participantData;
 
-          // Find user by username
-          const targetUser = await tx.user.findFirst({
-            where: {
-              auth: {
-                username: { equals: username, mode: "insensitive" }
-              }
-            },
-            include: {
-              auth: { select: { username: true } }
-            }
+          // Find user by userId
+          const targetUser = await tx.user.findUnique({
+            where: { userId: participantUserId },
+            select: { userId: true, name: true }
           });
 
           if (!targetUser) {
-            throw new Error(`User with username '${username}' not found`);
+            throw new Error(`User with userId '${participantUserId}' not found`);
           }
 
           // Calculate total amount for this participant
@@ -348,20 +342,33 @@ router.post("/create", authenticateToken, async (req, res) => {
       return { bill, createdItems, participantNotifications };
     });
 
-    // 6. Send notifications to participants
-    if (result.participantNotifications.length > 0) {
-      const NotificationService = require('../../services/notification.service');
-      const notificationService = new NotificationService(prisma);
+    // 6. Send notifications
+    const NotificationService = require('../../services/notification.service');
+    const notificationService = new NotificationService(prisma);
 
+    // Send bill created notification to host
+    await notificationService.sendBillCreated(
+      userId,
+      result.bill.billId,
+      billName,
+      result.participantNotifications.length,
+      billCode
+    );
+
+    // Send bill assignment notifications to participants only
+    if (result.participantNotifications.length > 0) {
       for (const participant of result.participantNotifications) {
-        await notificationService.sendBillAssignment(
-          participant.userId,
-          result.bill.billId,
-          billName,
-          host.name,
-          participant.amount,
-          billCode
-        );
+        // Only send to participants, not to host
+        if (participant.userId !== userId) {
+          await notificationService.sendBillAssignment(
+            participant.userId,
+            result.bill.billId,
+            billName,
+            host.name,
+            participant.amount,
+            billCode
+          );
+        }
       }
     }
 
@@ -803,6 +810,128 @@ router.post("/join", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Join bill error:", error);
     res.status(500).json({ error: "Failed to join bill" });
+  }
+});
+
+// 4.0 Get Bill from Notification (by billId or billCode)
+router.get("/from-notification/:identifier", authenticateToken, async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Try to find bill by billId first, then by billCode
+    let bill = await prisma.bill.findUnique({
+      where: { billId: identifier },
+      include: {
+        host: { select: { name: true, bniAccountNumber: true } },
+        billParticipants: {
+          where: { userId },
+          select: { amountShare: true, paymentStatus: true, paidAt: true }
+        },
+        category: true,
+        billItems: {
+          include: {
+            itemAssignments: {
+              where: {
+                participant: { userId }
+              },
+              select: {
+                quantityAssigned: true,
+                amountAssigned: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // If not found by billId, try billCode
+    if (!bill) {
+      bill = await prisma.bill.findUnique({
+        where: { billCode: identifier },
+        include: {
+          host: { select: { name: true, bniAccountNumber: true } },
+          billParticipants: {
+            where: { userId },
+            select: { amountShare: true, paymentStatus: true, paidAt: true }
+          },
+          category: true,
+          billItems: {
+            include: {
+              itemAssignments: {
+                where: {
+                  participant: { userId }
+                },
+                select: {
+                  quantityAssigned: true,
+                  amountAssigned: true
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" });
+    }
+
+    const participant = bill.billParticipants[0];
+    if (!participant) {
+      return res.status(403).json({ error: "You are not a participant in this bill" });
+    }
+
+    const now = new Date();
+    const deadline24h = new Date(bill.createdAt.getTime() + 24 * 60 * 60 * 1000);
+    const maxPaymentDate = new Date(bill.maxPaymentDate);
+    const paymentDeadline = bill.allowScheduledPayment ? maxPaymentDate : deadline24h;
+    const isExpired = now > paymentDeadline;
+    
+    const myItems = bill.billItems
+      .filter(item => item.itemAssignments.length > 0)
+      .map(item => ({
+        itemName: item.itemName,
+        price: parseFloat(item.price),
+        quantity: item.itemAssignments[0].quantityAssigned,
+        amount: parseFloat(item.itemAssignments[0].amountAssigned),
+        category: item.category
+      }));
+
+    res.json({
+      success: true,
+      bill: {
+        billId: bill.billId,
+        billCode: bill.billCode,
+        billName: bill.billName,
+        totalBillAmount: parseFloat(bill.totalAmount),
+        yourShare: parseFloat(participant.amountShare),
+        paymentStatus: participant.paymentStatus,
+        paidAt: participant.paidAt,
+        category: bill.category?.categoryName,
+        hostName: bill.host.name,
+        hostAccount: bill.host.bniAccountNumber,
+        paymentDeadline,
+        isExpired,
+        canSchedule: bill.allowScheduledPayment,
+        myItems,
+        itemCount: myItems.length,
+        feeBreakdown: {
+          subTotal: parseFloat(bill.subTotal || 0),
+          taxPct: parseFloat(bill.taxPct || 0),
+          taxAmount: parseFloat(bill.taxAmount || 0),
+          servicePct: parseFloat(bill.servicePct || 0),
+          serviceAmount: parseFloat(bill.serviceAmount || 0),
+          discountPct: parseFloat(bill.discountPct || 0),
+          discountAmount: parseFloat(bill.discountAmount || 0)
+        },
+        createdAt: bill.createdAt,
+      }
+    });
+  } catch (error) {
+    console.error("Get bill from notification error:", error);
+    res.status(500).json({ error: "Failed to get bill details" });
   }
 });
 

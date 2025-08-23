@@ -1,0 +1,320 @@
+{
+	"info": {
+		"_postman_id": "splitr-complete-flow-updated",
+		"name": "Splitr Complete Flow - Updated (userId)",
+		"description": "Complete testing flow with userId instead of username",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "host_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "participant_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "akmal_userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "billId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "🔐 Authentication",
+			"item": [
+				{
+					"name": "Login Host (Aulia)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('host_token', response.token);",
+									"    console.log('✅ Host logged in:', response.user.name);",
+									"    console.log('🏦 Account:', response.user.bniAccountNumber);",
+									"} else {",
+									"    console.log('❌ Host login failed');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"aulia\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login Participant (Akmal)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('participant_token', response.token);",
+									"    pm.collectionVariables.set('akmal_userId', response.user.userId);",
+									"    console.log('✅ Participant logged in:', response.user.name);",
+									"    console.log('🏦 Account:', response.user.bniAccountNumber);",
+									"    console.log('👤 User ID:', response.user.userId);",
+									"} else {",
+									"    console.log('❌ Participant login failed');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"akmal\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"auth",
+								"login"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🏠 Host POV - Bill Management",
+			"item": [
+				{
+					"name": "Create Bill with Participants (userId)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('billId', response.billId);",
+									"    console.log('✅ Bill Created Successfully');",
+									"    console.log('📋 Bill Name:', response.billName);",
+									"    console.log('🔢 Bill Code:', response.billCode);",
+									"    console.log('💰 Total Amount: Rp', response.totalAmount.toLocaleString());",
+									"    console.log('👥 Participants Added:', response.participantsAdded);",
+									"} else {",
+									"    console.log('❌ Error:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"billName\": \"Makan Siang Warmindo\",\n  \"categoryId\": null,\n  \"totalAmount\": 118000,\n  \"maxPaymentDate\": \"2024-12-31T23:59:59Z\",\n  \"allowScheduledPayment\": false,\n  \"splitMethod\": \"custom\",\n  \"currency\": \"IDR\",\n  \"items\": [\n    {\n      \"tempItemId\": \"ayam_001\",\n      \"itemName\": \"Ayam Bakar\",\n      \"price\": 18000,\n      \"quantity\": 2,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"teh_001\",\n      \"itemName\": \"Es Teh Manis\",\n      \"price\": 5000,\n      \"quantity\": 4,\n      \"category\": \"beverage\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"ikan_001\",\n      \"itemName\": \"Ikan Bakar\",\n      \"price\": 25000,\n      \"quantity\": 2,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"nasi_001\",\n      \"itemName\": \"Nasi Putih\",\n      \"price\": 3000,\n      \"quantity\": 4,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    }\n  ],\n  \"participants\": [\n    {\n      \"userId\": \"{{akmal_userId}}\",\n      \"items\": [\n        {\n          \"tempItemId\": \"ayam_001\",\n          \"quantity\": 1,\n          \"amount\": 18000\n        },\n        {\n          \"tempItemId\": \"teh_001\",\n          \"quantity\": 2,\n          \"amount\": 10000\n        },\n        {\n          \"tempItemId\": \"ikan_001\",\n          \"quantity\": 1,\n          \"amount\": 25000\n        },\n        {\n          \"tempItemId\": \"nasi_001\",\n          \"quantity\": 2,\n          \"amount\": 6000\n        }\n      ]\n    }\n  ],\n  \"fees\": {\n    \"taxPct\": 10,\n    \"servicePct\": 0,\n    \"discountPct\": 0,\n    \"discountNominal\": 0,\n    \"subTotal\": 108000,\n    \"taxAmount\": 10800,\n    \"serviceAmount\": 0,\n    \"discountAmount\": 0\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"create"
+							]
+						}
+					}
+				},
+				{
+					"name": "Host View Bill Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{host_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/{{billId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"{{billId}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "👤 Participant POV - View & Pay",
+			"item": [
+				{
+					"name": "View Assigned Bills",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mobile/bills/assigned",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"bills",
+								"assigned"
+							]
+						}
+					}
+				},
+				{
+					"name": "Make Payment (PIN: 123456)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    console.log('✅ Payment Successful!');",
+									"    console.log('💳 Transaction ID:', response.payment.transactionId);",
+									"    console.log('🏦 BNI Reference:', response.payment.bniReferenceNumber);",
+									"    console.log('💰 Amount Paid: Rp', response.payment.amount.toLocaleString());",
+									"} else {",
+									"    console.log('❌ Payment Failed:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{participant_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"billId\": \"{{billId}}\",\n  \"amount\": 59000,\n  \"pin\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mobile/payments/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mobile",
+								"payments",
+								"create"
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}

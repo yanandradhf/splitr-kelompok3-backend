@@ -164,6 +164,7 @@ class NotificationService {
           hostName,
           amount,
           billCode,
+          identifier: billCode,
           action: "view_bill"
         }
       }
@@ -238,6 +239,26 @@ class NotificationService {
         metadata: {
           billName,
           participantName,
+          action: "view_bill"
+        }
+      }
+    });
+  }
+
+  // Send bill created notification to host
+  async sendBillCreated(hostId, billId, billName, participantCount, billCode) {
+    await this.prisma.notification.create({
+      data: {
+        userId: hostId,
+        billId,
+        type: "bill_created",
+        title: "Bill Created",
+        message: `You created '${billName}'${participantCount > 0 ? ` with ${participantCount} participant${participantCount > 1 ? 's' : ''}` : ''}`,
+        metadata: {
+          billName,
+          participantCount,
+          billCode,
+          identifier: billCode,
           action: "view_bill"
         }
       }
