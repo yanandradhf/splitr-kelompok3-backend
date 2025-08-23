@@ -5,6 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const router = express.Router();
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError } = require("../../middleware/error.middleware");
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -58,7 +59,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // 1. Get Profile
-router.get("/", authenticateToken, async (req, res) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
@@ -76,7 +77,7 @@ router.get("/", authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      throw new NotFoundError("User profile not found");
     }
 
     // Get stats
@@ -117,13 +118,12 @@ router.get("/", authenticateToken, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get profile error:", error);
-    res.status(500).json({ error: "Failed to get profile" });
+    next(error);
   }
 });
 
 // 2. Update Profile
-router.put("/", authenticateToken, async (req, res) => {
+router.put("/", authenticateToken, async (req, res, next) => {
   try {
     const { name, phone, email } = req.body;
     const prisma = req.prisma;
@@ -152,86 +152,79 @@ router.put("/", authenticateToken, async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Update profile error:", error);
-    res.status(500).json({ error: "Failed to update profile" });
+    next(error);
   }
 });
 
 // 2.1. Upload Profile Picture
-router.put(
-  "/upload-picture",
-  authenticateToken,
-  upload.single("profilePicture"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "No image file provided" });
-      }
-
-      const prisma = req.prisma;
-      const userId = req.user.userId;
-      const filename = req.file.filename;
-      const profilePictureUrl = `/uploads/profiles/${filename}`;
-
-      // Get current user to delete old profile picture
-      const currentUser = await prisma.user.findUnique({
-        where: { userId },
-        select: { profilePictureName: true },
-      });
-
-      // Delete old profile picture if exists
-      if (currentUser?.profilePictureName) {
-        const oldFilePath = path.join(
-          __dirname,
-          "../../public/uploads/profiles",
-          currentUser.profilePictureName
-        );
-        if (fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
-        }
-      }
-
-      // Update user with new profile picture
-      const updatedUser = await prisma.user.update({
-        where: { userId },
-        data: {
-          profilePictureUrl: profilePictureUrl,
-          profilePictureName: filename,
-          updatedAt: new Date(),
-        },
-        select: {
-          userId: true,
-          name: true,
-          profilePictureUrl: true,
-          profilePictureName: true,
-        },
-      });
-
-      res.json({
-        message: "Profile picture updated successfully",
-        profilePictureUrl: updatedUser.profilePictureUrl,
-        user: updatedUser,
-      });
-    } catch (error) {
-      console.error("Upload profile picture error:", error);
-      // Delete uploaded file if database update fails
-      if (req.file) {
-        const filePath = path.join(
-          __dirname,
-          "../../public/uploads/profiles",
-          req.file.filename
-        );
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      }
-      res.status(500).json({ error: "Failed to upload profile picture" });
+router.put("/upload-picture", authenticateToken, upload.single("profilePicture"), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      throw new BadRequestError("No image file provided");
     }
+
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+    const filename = req.file.filename;
+    const profilePictureUrl = `/uploads/profiles/${filename}`;
+
+    // Get current user to delete old profile picture
+    const currentUser = await prisma.user.findUnique({
+      where: { userId },
+      select: { profilePictureName: true },
+    });
+
+    // Delete old profile picture if exists
+    if (currentUser?.profilePictureName) {
+      const oldFilePath = path.join(
+        __dirname,
+        "../../public/uploads/profiles",
+        currentUser.profilePictureName
+      );
+      if (fs.existsSync(oldFilePath)) {
+        fs.unlinkSync(oldFilePath);
+      }
+    }
+
+    // Update user with new profile picture
+    const updatedUser = await prisma.user.update({
+      where: { userId },
+      data: {
+        profilePictureUrl: profilePictureUrl,
+        profilePictureName: filename,
+        updatedAt: new Date(),
+      },
+      select: {
+        userId: true,
+        name: true,
+        profilePictureUrl: true,
+        profilePictureName: true,
+      },
+    });
+
+    res.json({
+      message: "Profile picture updated successfully",
+      profilePictureUrl: updatedUser.profilePictureUrl,
+      user: updatedUser,
+    });
+  } catch (error) {
+    // Delete uploaded file if database update fails
+    if (req.file) {
+      const filePath = path.join(
+        __dirname,
+        "../../public/uploads/profiles",
+        req.file.filename
+      );
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+    next(error);
   }
-);
+});
 
 // 2.2. Delete Profile Picture
-router.delete("/delete-picture", authenticateToken, async (req, res) => {
+router.delete("/delete-picture", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
@@ -243,7 +236,7 @@ router.delete("/delete-picture", authenticateToken, async (req, res) => {
     });
 
     if (!currentUser?.profilePictureName) {
-      return res.status(404).json({ error: "No profile picture found" });
+      throw new NotFoundError("No profile picture found");
     }
 
     // Delete file from filesystem
@@ -270,13 +263,12 @@ router.delete("/delete-picture", authenticateToken, async (req, res) => {
       message: "Profile picture deleted successfully",
     });
   } catch (error) {
-    console.error("Delete profile picture error:", error);
-    res.status(500).json({ error: "Failed to delete profile picture" });
+    next(error);
   }
 });
 
 // 2.3. Get Profile Picture
-router.get("/check-picture", authenticateToken, async (req, res) => {
+router.get("/picture", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
@@ -287,7 +279,7 @@ router.get("/check-picture", authenticateToken, async (req, res) => {
     });
 
     if (!user?.profilePictureName) {
-      return res.status(404).json({ error: "No profile picture found" });
+      throw new NotFoundError("No profile picture found");
     }
 
     const filePath = path.join(
@@ -297,33 +289,28 @@ router.get("/check-picture", authenticateToken, async (req, res) => {
     );
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "Profile picture file not found" });
+      throw new NotFoundError("Profile picture file not found");
     }
 
     res.sendFile(filePath);
   } catch (error) {
-    console.error("Get profile picture error:", error);
-    res.status(500).json({ error: "Failed to get profile picture" });
+    next(error);
   }
 });
 
 // 3. Change Password
-router.put("/change-password", authenticateToken, async (req, res) => {
+router.put("/change-password", authenticateToken, async (req, res, next) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      return res.status(400).json({
-        error: "Current password, new password, and confirm password required",
-      });
+      throw new ValidationError("Current password, new password, and confirm password required");
     }
 
     if (newPassword !== confirmPassword) {
-      return res
-        .status(400)
-        .json({ error: "New password and confirm password do not match" });
+      throw new ValidationError("New password and confirm password do not match");
     }
 
     // Verify current password
@@ -332,7 +319,7 @@ router.put("/change-password", authenticateToken, async (req, res) => {
     });
 
     if (!auth) {
-      return res.status(404).json({ error: "User authentication not found" });
+      throw new NotFoundError("User authentication not found");
     }
 
     const isValidPassword = await bcrypt.compare(
@@ -340,7 +327,7 @@ router.put("/change-password", authenticateToken, async (req, res) => {
       auth.passwordHash
     );
     if (!isValidPassword) {
-      return res.status(400).json({ error: "Current password is incorrect" });
+      throw new ValidationError("Current password is incorrect");
     }
 
     // Update password
@@ -353,28 +340,23 @@ router.put("/change-password", authenticateToken, async (req, res) => {
 
     res.json({ message: "Password changed successfully" });
   } catch (error) {
-    console.error("Change password error:", error);
-    res.status(500).json({ error: "Failed to change password" });
+    next(error);
   }
 });
 
 // 4. Change PIN
-router.put("/change-pin", authenticateToken, async (req, res) => {
+router.put("/change-pin", authenticateToken, async (req, res, next) => {
   try {
     const { currentPin, newPin, confirmPin } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
     if (!currentPin || !newPin || !confirmPin) {
-      return res
-        .status(400)
-        .json({ error: "Current PIN, new PIN, and confirm PIN required" });
+      throw new ValidationError("Current PIN, new PIN, and confirm PIN required");
     }
 
     if (newPin !== confirmPin) {
-      return res
-        .status(400)
-        .json({ error: "New PIN and confirm PIN do not match" });
+      throw new ValidationError("New PIN and confirm PIN do not match");
     }
 
     // Verify current PIN
@@ -383,12 +365,12 @@ router.put("/change-pin", authenticateToken, async (req, res) => {
     });
 
     if (!user || !user.encryptedPinHash) {
-      return res.status(404).json({ error: "User PIN not found" });
+      throw new NotFoundError("User PIN not found");
     }
 
     const isValidPin = await bcrypt.compare(currentPin, user.encryptedPinHash);
     if (!isValidPin) {
-      return res.status(400).json({ error: "Current PIN is incorrect" });
+      throw new ValidationError("Current PIN is incorrect");
     }
 
     // Update PIN
@@ -401,54 +383,43 @@ router.put("/change-pin", authenticateToken, async (req, res) => {
 
     res.json({ message: "PIN changed successfully" });
   } catch (error) {
-    console.error("Change PIN error:", error);
-    res.status(500).json({ error: "Failed to change PIN" });
+    next(error);
   }
 });
 
-// 5. Email Notifications Toogle
-router.put(
-  "/email-notifications-toogle",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const { emailNotifToogle } = req.body;
-      const prisma = req.prisma;
-      const userId = req.user.userId;
+// 5. Email Notifications Toggle
+router.put("/email-notifications-toggle", authenticateToken, async (req, res, next) => {
+  try {
+    const { emailNotifToggle } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
 
-      // Check if the emailNotifEnabled value is a boolean
-      if (typeof emailNotifToogle !== "boolean") {
-        return res.status(400).json({
-          error: "Invalid input: emailNotifEnabled must be a boolean.",
-        });
-      }
-
-      await prisma.user.update({
-        where: { userId },
-        data: {
-          emailNotifToogle,
-          updatedAt: new Date(),
-        },
-        select: {
-          userId: true,
-          emailNotifToogle,
-        },
-      });
-
-      res.json({
-        message: `Email notifications enabled ${
-          emailNotifToogle ? "enabled" : "disabled"
-        } successfully`,
-      });
-    } catch (error) {
-      console.error("Enable email notifications error:", error);
-      res.status(500).json({ error: "Failed to enable email notifications" });
+    if (typeof emailNotifToggle !== "boolean") {
+      throw new ValidationError("Invalid input: emailNotifToggle must be a boolean");
     }
+
+    await prisma.user.update({
+      where: { userId },
+      data: {
+        emailNotifToggle,
+        updatedAt: new Date(),
+      },
+      select: {
+        userId: true,
+        emailNotifToggle,
+      },
+    });
+
+    res.json({
+      message: `Email notifications ${emailNotifToggle ? "enabled" : "disabled"} successfully`,
+    });
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 // 6. Get Transaction History
-router.get("/history", authenticateToken, async (req, res) => {
+router.get("/history", authenticateToken, async (req, res, next) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
     const prisma = req.prisma;
@@ -511,13 +482,12 @@ router.get("/history", authenticateToken, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get history error:", error);
-    res.status(500).json({ error: "Failed to get transaction history" });
+    next(error);
   }
 });
 
 // 7. Get Spending Analytics
-router.get("/analytics", authenticateToken, async (req, res) => {
+router.get("/analytics", authenticateToken, async (req, res, next) => {
   try {
     const { period = "30days" } = req.query;
     const prisma = req.prisma;
@@ -587,8 +557,7 @@ router.get("/analytics", authenticateToken, async (req, res) => {
       transactionCount: payments.length,
     });
   } catch (error) {
-    console.error("Get analytics error:", error);
-    res.status(500).json({ error: "Failed to get analytics" });
+    next(error);
   }
 });
 
