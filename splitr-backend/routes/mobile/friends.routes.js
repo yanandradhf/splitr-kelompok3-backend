@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const NotificationService = require("../../services/notification.service");
 const router = express.Router();
+const { errorHandler } = require("../../middleware/error.middleware");
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 
@@ -11,21 +12,40 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
 };
 
 // 1. Get Friends List
-router.get("/", authenticateToken, async (req, res) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const friends = await prisma.friend.findMany({
       where: {
@@ -61,20 +81,45 @@ router.get("/", authenticateToken, async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Get friends error:", error);
-    res.status(500).json({ error: "Failed to get friends" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 2. Search Users by Username (specific search)
-router.get("/search", authenticateToken, async (req, res) => {
+router.get("/search", authenticateToken, async (req, res, next) => {
   try {
     const { username } = req.query;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
     if (!username) {
-      return res.status(400).json({ error: "Username required" });
+      const error = new Error("Username dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Get existing friend IDs
@@ -110,10 +155,9 @@ router.get("/search", authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({ 
-        error: "User not found",
-        message: `No user found with username '${username}'`
-      });
+      const error = new Error(`Tidak ada user dengan username '${username}'`);
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Check if already friends
@@ -132,20 +176,46 @@ router.get("/search", authenticateToken, async (req, res) => {
       canAddFriend: !isAlreadyFriend
     });
   } catch (error) {
-    console.error("Search user error:", error);
-    res.status(500).json({ error: "Failed to search user" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 3. Add Friend by Username
-router.post("/add-by-username", authenticateToken, async (req, res) => {
+router.post("/add-by-username", authenticateToken, async (req, res, next) => {
   try {
     const { username } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
     if (!username) {
-      return res.status(400).json({ error: "Username required" });
+      const error = new Error("Username dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Find user by username
@@ -166,14 +236,15 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
     });
 
     if (!friendUser) {
-      return res.status(400).json({ 
-        error: "User not found",
-        message: `No user found with username '${username}'`
-      });
+      const error = new Error(`Tidak ada user dengan username '${username}'`);
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     if (friendUser.userId === userId) {
-      return res.status(400).json({ error: "Cannot add yourself as friend" });
+      const error = new Error("Tidak bisa menambahkan diri sendiri sebagai teman");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Check if you already added this user
@@ -185,10 +256,9 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
     });
 
     if (existingFriendship) {
-      return res.status(400).json({ 
-        error: "Already added",
-        message: `You already added ${friendUser.name} to your friends`
-      });
+      const error = new Error(`Anda sudah menambahkan ${friendUser.name} ke daftar teman`);
+      error.name = "ConflictError";
+      return next(error);
     }
 
     // Create one-way friendship (only from current user to target user)
@@ -199,8 +269,6 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
         status: "active"
       },
     });
-
-    // No notification needed for one-way friendship
 
     res.json({
       success: true,
@@ -213,12 +281,25 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Add friend by username error:", error);
-    res.status(500).json({ error: "Failed to add friend" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+      error.message = "Sudah berteman";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
-// 4. Add Friend by User ID (existing endpoint)
+// 4. Add Friend by User ID (existing endpoint) (tidak dipakai)
 router.post("/add", authenticateToken, async (req, res) => {
   try {
     const { friendUserId } = req.body;
@@ -281,11 +362,57 @@ router.post("/add", authenticateToken, async (req, res) => {
 });
 
 // 5. Remove Friend
-router.delete("/remove/:friendUserId", authenticateToken, async (req, res) => {
+router.delete("/remove/:friendUserId", authenticateToken, async (req, res, next) => {
   try {
     const { friendUserId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!friendUserId) {
+      const error = new Error("ID teman dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Check if friend user exists
+    const friendUser = await prisma.user.findUnique({
+      where: { userId: friendUserId },
+      select: { userId: true },
+    });
+
+    if (!friendUser) {
+      const error = new Error("User tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
+    }
+
+    // Check if friendship exists
+    const existingFriendship = await prisma.friend.findFirst({
+      where: {
+        userId,
+        friendUserId,
+      },
+    });
+
+    if (!existingFriendship) {
+      const error = new Error("User bukan teman Anda");
+      error.name = "NotFoundError";
+      return next(error);
+    }
 
     // Remove one-way friendship (only from current user)
     await prisma.friend.deleteMany({
@@ -297,8 +424,18 @@ router.delete("/remove/:friendUserId", authenticateToken, async (req, res) => {
 
     res.json({ message: "Friend removed successfully" });
   } catch (error) {
-    console.error("Remove friend error:", error);
-    res.status(500).json({ error: "Failed to remove friend" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Pertemanan tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
