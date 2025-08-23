@@ -3,6 +3,9 @@ const jwt = require("jsonwebtoken");
 const NotificationService = require("../../services/notification.service");
 const router = express.Router();
 
+// Import error handlers
+const { errorHandler } = require("../../middleware/error.middleware");
+
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 
 // Middleware to verify token
@@ -11,21 +14,40 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
 };
 
 // 1. Get User Groups
-router.get("/", authenticateToken, async (req, res) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const groups = await prisma.group.findMany({
       where: {
@@ -81,24 +103,52 @@ router.get("/", authenticateToken, async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Get groups error:", error);
-    res.status(500).json({ error: "Failed to get groups" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 2. Create Group
-router.post("/create", authenticateToken, async (req, res) => {
+router.post("/create", authenticateToken, async (req, res, next) => {
   try {
     const { groupName, description, memberIds = [] } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    if (!groupName) {
-      return res.status(400).json({ error: "Group name required" });
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
     }
 
-    if (memberIds.length === 0) {
-      return res.status(400).json({ error: "At least one member must be added besides the creator." });
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupName) {
+      const error = new Error("Nama grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    if (!memberIds || memberIds.length === 0) {
+      const error = new Error("Perlu 1 anggota lain selain pembuat untuk membuat grup");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Get creator info for notifications
@@ -106,6 +156,12 @@ router.post("/create", authenticateToken, async (req, res) => {
       where: { userId },
       select: { name: true },
     });
+
+    if (!creator) {
+      const error = new Error("Pembuat grup tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
+    }
 
     // Validate that memberIds are from user's friends
     const friendIds = await prisma.friend.findMany({
@@ -116,10 +172,9 @@ router.post("/create", authenticateToken, async (req, res) => {
     const invalidMembers = memberIds.filter(id => !validFriendIds.includes(id));
     
     if (invalidMembers.length > 0) {
-      return res.status(400).json({ 
-        error: "Can only add friends to group",
-        message: "Some selected users are not in your friends list"
-      });
+      const error = new Error("Hanya bisa menambahkan teman ke grup");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     const group = await prisma.group.create({
@@ -168,21 +223,60 @@ router.post("/create", authenticateToken, async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Create group error:", error);
-    res.status(500).json({ error: "Failed to create group" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 3. Add Member to Group
-router.post("/:groupId/members", authenticateToken, async (req, res) => {
+router.post("/:groupId/members", authenticateToken, async (req, res, next) => {
   try {
     const { groupId } = req.params;
     const { userId: newMemberId } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupId) {
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
     if (!newMemberId) {
-      return res.status(400).json({ error: "User ID required" });
+      const error = new Error("ID User dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Prevent creator from adding themselves
+    if (newMemberId === userId) {
+      const error = new Error("Pembuat grup tidak bisa menambahkan diri sendiri");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Check if user is group creator
@@ -194,7 +288,9 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
     });
 
     if (!group) {
-      return res.status(403).json({ error: "Only group creator can add members" });
+      const error = new Error("Hanya pembuat grup yang dapat menambahkan anggota");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     // Check if user is already a member
@@ -206,7 +302,9 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
     });
 
     if (existingMember) {
-      return res.status(400).json({ error: "User is already a member" });
+      const error = new Error("User sudah menjadi member di grup ini");
+      error.name = "ConflictError";
+      return next(error);
     }
 
     // Validate that new member is a friend
@@ -218,10 +316,9 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
     });
 
     if (!friendship) {
-      return res.status(400).json({ 
-        error: "Can only add friends to group",
-        message: "User must be in your friends list to be added to group"
-      });
+      const error = new Error("Hanya bisa menambahkan teman ke grup");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Add member
@@ -255,20 +352,55 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
 
     res.json({ message: "Member added successfully" });
   } catch (error) {
-    console.error("Add member error:", error);
-    res.status(500).json({ error: "Failed to add member" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+      error.message = "User is already a member of this group";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
-// 3.1. Delete group member before finalizing
-router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) => {
+// 3.1. Delete group member (by creator)
+router.delete("/:groupId/members/:userId", authenticateToken, async (req, res, next) => {
   try {
     const { groupId, userId: memberIdToDelete } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupId) {
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
     if (!memberIdToDelete) {
-      return res.status(400).json({ error: "Member ID is required" });
+      const error = new Error("ID member dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Check if the user is the group creator
@@ -280,7 +412,9 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
     });
 
     if (!group) {
-      return res.status(403).json({ error: "Only the group creator can remove members" });
+      const error = new Error("Hanya pembuat grup yang dapat menghapus anggota");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     // Check if the member to be deleted actually exists in the group
@@ -292,12 +426,16 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
     });
 
     if (!existingMember) {
-      return res.status(404).json({ error: "Member not found in this group" });
+      const error = new Error("Member tidak ditemukan di grup ini");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Prevent the creator from deleting themselves
     if (userId === memberIdToDelete) {
-      return res.status(400).json({ error: "Group creator cannot delete themselves. They must delete the group instead." });
+      const error = new Error("Pembuat grup tidak bisa menghapus diri sendiri. Hapus grup sebagai gantinya.");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Get user info for notifications
@@ -333,12 +471,23 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
 
     res.json({ message: "Member removed successfully" });
   } catch (error) {
-    console.error("Remove member error:", error);
-    res.status(500).json({ error: "Failed to remove member" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Member atau grup tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
-// 3.2. Leave Group
+// 3.2. Leave Group (tidak dipakai)
 router.delete("/leave/:groupId", authenticateToken, async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -387,11 +536,31 @@ router.delete("/leave/:groupId", authenticateToken, async (req, res) => {
 });
 
 // 4. Get Group Details
-router.get("/:groupId", authenticateToken, async (req, res) => {
+router.get("/:groupId", authenticateToken, async (req, res, next) => {
   try {
     const { groupId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupId) {
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     const group = await prisma.group.findFirst({
       where: {
@@ -435,7 +604,9 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
     });
 
     if (!group) {
-      return res.status(404).json({ error: "Group not found" });
+      const error = new Error("Grup tidak ditemukan atau Anda tidak memiliki akses");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Get user's friends to show friendship status
@@ -465,23 +636,55 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
       createdAt: group.createdAt,
     });
   } catch (error) {
-    console.error("Get group details error:", error);
-    res.status(500).json({ error: "Failed to get group details" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Grup tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 //5. Edit Group
-router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
+router.patch("/edit/:groupId", authenticateToken, async (req, res, next) => {
   try {
     const { groupId } = req.params; 
     const { groupName, description } = req.body; 
     const prisma = req.prisma;
     const userId = req.user.userId; 
 
-    if (!groupName && !description) {
-      return res.status(400).json({ error: "No fields provided for update. Please provide groupName or description." });
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
     }
 
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupId) {
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    if (!groupName && !description) {
+      const error = new Error("Tidak ada field yang diupdate. Berikan groupName atau description.");
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     const existingGroup = await prisma.group.findUnique({
       where: {
@@ -493,11 +696,15 @@ router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
     });
 
     if (!existingGroup) {
-      return res.status(404).json({ error: "Group not found" });
+      const error = new Error("Grup tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     if (existingGroup.creatorId !== userId) {
-      return res.status(403).json({ error: "Only the group creator can edit this group" });
+      const error = new Error("Hanya pembuat grup yang dapat mengedit grup ini");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     const updateData = {};
@@ -560,17 +767,60 @@ router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Edit group error:", error);
-    res.status(500).json({ error: "Failed to edit group" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Grup tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 6. Add Friend from Group Member
-router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res) => {
+router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res, next) => {
   try {
     const { groupId, memberId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupId) {
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    if (!memberId) {
+      const error = new Error("ID member dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    if (memberId === userId) {
+      const error = new Error("Tidak bisa menambahkan diri sendiri sebagai teman");
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     // Verify user is in the group
     const membership = await prisma.groupMember.findFirst({
@@ -581,7 +831,9 @@ router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res
     });
 
     if (!membership) {
-      return res.status(403).json({ error: "You are not a member of this group" });
+      const error = new Error("Anda bukan anggota grup ini");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     // Verify target user is also in the group
@@ -593,11 +845,9 @@ router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res
     });
 
     if (!targetMembership) {
-      return res.status(404).json({ error: "Target user is not in this group" });
-    }
-
-    if (memberId === userId) {
-      return res.status(400).json({ error: "Cannot add yourself as friend" });
+      const error = new Error("User target tidak ada di grup ini");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Check if already friends
@@ -609,7 +859,9 @@ router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res
     });
 
     if (existingFriendship) {
-      return res.status(400).json({ error: "Already friends" });
+      const error = new Error("Sudah berteman");
+      error.name = "ConflictError";
+      return next(error);
     }
 
     // Add as friend (one-way)
@@ -621,12 +873,23 @@ router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res
       },
     });
 
-    // No notification needed for one-way friendship
-
     res.json({ message: "Friend added successfully" });
   } catch (error) {
-    console.error("Add friend from group error:", error);
-    res.status(500).json({ error: "Failed to add friend" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+      error.message = "Sudah berteman";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
@@ -704,14 +967,30 @@ router.post("/:groupId/leave", authenticateToken, async (req, res) => {
 });
 
 // 8. Delete Group
-router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
+router.delete("/delete/:groupId", authenticateToken, async (req, res, next) => {
   try {
     const { groupId } = req.params; 
     const prisma = req.prisma;
     const userId = req.user.userId; 
 
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
     if (!groupId) {
-      return res.status(400).json({ error: "Group ID required" });
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     const groupToDelete = await prisma.group.findUnique({
@@ -724,12 +1003,15 @@ router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
     });
 
     if (!groupToDelete) {
-      return res.status(404).json({ error: "Group not found" });
+      const error = new Error("Grup tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     if (groupToDelete.creatorId !== userId) {
-
-      return res.status(403).json({ error: "Only the group creator can delete this group" });
+      const error = new Error("Hanya pembuat grup yang dapat menghapus grup ini");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     // Get group info and members for notifications
@@ -777,8 +1059,19 @@ router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
 
     res.json({ message: "Group deleted successfully" });
   } catch (error) {
-    console.error("Delete group error:", error);
-    res.status(500).json({ error: "Failed to delete group" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Grup tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 

@@ -11,6 +11,15 @@ const notFoundHandler = (req, res) => {
 
 // Error Categories & Status Code Mapping
 const getErrorResponse = (err) => {
+  // Validate err parameter
+  if (!err) {
+    return {
+      status: 500,
+      errorCode: "INTERNAL_SERVER_ERROR",
+      message: "Something went wrong"
+    };
+  }
+
   // Default 500 error
   let status = 500;
   let errorCode = "INTERNAL_SERVER_ERROR";
@@ -83,6 +92,36 @@ const getErrorResponse = (err) => {
       errorCode = "EXTERNAL_SERVICE_ERROR";
       message = "External service error";
       break;
+    case "InsufficientFundsError":
+      status = 402;
+      errorCode = "INSUFFICIENT_FUNDS";
+      message = "Insufficient funds for transaction";
+      break;
+    case "PaymentFailedError":
+      status = 402;
+      errorCode = "PAYMENT_FAILED";
+      message = "Payment processing failed";
+      break;
+    case "InvalidAccountError":
+      status = 400;
+      errorCode = "INVALID_ACCOUNT";
+      message = "Invalid account information";
+      break;
+    case "TransactionLimitError":
+      status = 429;
+      errorCode = "TRANSACTION_LIMIT_EXCEEDED";
+      message = "Transaction limit exceeded";
+      break;
+    case "ExpiredTokenError":
+      status = 401;
+      errorCode = "TOKEN_EXPIRED";
+      message = "Authentication token has expired";
+      break;
+    case "MaintenanceError":
+      status = 503;
+      errorCode = "MAINTENANCE_MODE";
+      message = "System is under maintenance";
+      break;
     default:
       // Use existing status if provided
       status = err.status || 500;
@@ -95,7 +134,13 @@ const getErrorResponse = (err) => {
 
 // Error handling middleware
 const errorHandler = (err, req, res, next) => {
-  console.error("Error:", err);
+  // Sanitize error for logging to prevent log injection
+  const sanitizedError = {
+    name: err?.name || 'Unknown',
+    message: err?.message?.replace(/[\r\n\t]/g, ' ') || 'No message',
+    stack: err?.stack?.replace(/[\r\n\t]/g, ' ') || 'No stack'
+  };
+  console.error("Error:", sanitizedError);
   
   const { status, errorCode, message } = getErrorResponse(err);
   const isDev = process.env.NODE_ENV === "development";
