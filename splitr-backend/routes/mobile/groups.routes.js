@@ -894,11 +894,31 @@ router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res
 });
 
 // 7. Leave Group (for members)
-router.post("/:groupId/leave", authenticateToken, async (req, res) => {
+router.post("/:groupId/leave", authenticateToken, async (req, res, next) => {
   try {
     const { groupId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    // Validate required dependencies
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate input
+    if (!groupId) {
+      const error = new Error("ID grup dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     // Get group info
     const group = await prisma.group.findUnique({
@@ -911,15 +931,16 @@ router.post("/:groupId/leave", authenticateToken, async (req, res) => {
     });
 
     if (!group) {
-      return res.status(404).json({ error: "Group not found" });
+      const error = new Error("Grup tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Prevent creator from leaving (they must delete group instead)
     if (group.creatorId === userId) {
-      return res.status(400).json({ 
-        error: "Group creator cannot leave",
-        message: "As the creator, you must delete the group instead of leaving it"
-      });
+      const error = new Error("Pembuat grup tidak bisa keluar. Hapus grup sebagai gantinya.");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Check if user is a member
@@ -931,7 +952,9 @@ router.post("/:groupId/leave", authenticateToken, async (req, res) => {
     });
 
     if (!membership) {
-      return res.status(404).json({ error: "You are not a member of this group" });
+      const error = new Error("Anda bukan anggota grup ini");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Remove user from group
@@ -961,8 +984,19 @@ router.post("/:groupId/leave", authenticateToken, async (req, res) => {
 
     res.json({ message: "Left group successfully" });
   } catch (error) {
-    console.error("Leave group error:", error);
-    res.status(500).json({ error: "Failed to leave group" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Grup atau membership tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
