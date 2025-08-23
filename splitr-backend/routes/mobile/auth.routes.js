@@ -804,14 +804,42 @@ router.get("/bni-balance/:accountNumber", async (req, res) => {
 });
 
 // 7.1. Verify PIN
-router.post("/verify-pin", authenticateToken, async (req, res) => {
+router.post("/verify-pin", authenticateToken, async (req, res, next) => {
   try {
     const { pin } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     if (!pin) {
-      return res.status(400).json({ error: "PIN required" });
+      const error = new Error("PIN dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+    
+    // Validate PIN length
+    if (pin.length !== 6) {
+      const error = new Error("PIN harus 6 digit");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate PIN characters (only numbers)
+    if (!/^[0-9]+$/.test(pin)) {
+      const error = new Error("PIN hanya boleh berisi angka");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     const user = await prisma.user.findUnique({
@@ -820,18 +848,33 @@ router.post("/verify-pin", authenticateToken, async (req, res) => {
     });
 
     if (!user || !user.encryptedPinHash) {
-      return res.status(404).json({ error: "PIN not set" });
+      const error = new Error("PIN belum diatur");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     const isValidPin = await bcrypt.compare(pin, user.encryptedPinHash);
     if (!isValidPin) {
-      return res.status(401).json({ error: "Invalid PIN" });
+      const error = new Error("PIN tidak valid");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     res.json({ verified: true, message: "PIN verified successfully" });
   } catch (error) {
-    console.error("Verify PIN error:", error);
-    res.status(500).json({ error: "PIN verification failed" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "User tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
