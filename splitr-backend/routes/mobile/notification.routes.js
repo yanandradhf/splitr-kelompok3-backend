@@ -6,15 +6,21 @@ const JWT_SECRET = process.env.JWT_SECRET || "splitr_secret_key";
 
 // Middleware to verify token
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: "Access token required" });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: "Invalid token" });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
@@ -26,6 +32,18 @@ router.get("/", authenticateToken, async (req, res) => {
     const { limit = 20, offset = 0, unreadOnly = false } = req.query;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const where = {
       userId,
@@ -78,17 +96,44 @@ router.get("/", authenticateToken, async (req, res) => {
       totalCount,
     });
   } catch (error) {
-    console.error("Get notifications error:", error);
-    res.status(500).json({ error: "Failed to get notifications" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 2. Mark Notification as Read
-router.put("/:notificationId/read", authenticateToken, async (req, res) => {
+router.put("/:notificationId/read", authenticateToken, async (req, res, next) => {
   try {
     const { notificationId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    if (!notificationId) {
+      const error = new Error("ID notifikasi dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     await prisma.notification.updateMany({
       where: {
@@ -102,16 +147,39 @@ router.put("/:notificationId/read", authenticateToken, async (req, res) => {
 
     res.json({ message: "Notification marked as read" });
   } catch (error) {
-    console.error("Mark notification read error:", error);
-    res.status(500).json({ error: "Failed to mark notification as read" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Notifikasi tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 3. Mark All Notifications as Read
-router.put("/read-all", authenticateToken, async (req, res) => {
+router.put("/read-all", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const result = await prisma.notification.updateMany({
       where: {
@@ -128,20 +196,44 @@ router.put("/read-all", authenticateToken, async (req, res) => {
       count: result.count,
     });
   } catch (error) {
-    console.error("Mark all read error:", error);
-    res.status(500).json({ error: "Failed to mark all notifications as read" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 4. Handle Group Notification Actions
-router.post("/group-action", authenticateToken, async (req, res) => {
+router.post("/group-action", authenticateToken, async (req, res, next) => {
   try {
     const { notificationId, action } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     if (!notificationId || !action) {
-      return res.status(400).json({ error: "Notification ID and action required" });
+      const error = new Error("ID notifikasi dan action dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Get notification
@@ -154,7 +246,9 @@ router.post("/group-action", authenticateToken, async (req, res) => {
     });
 
     if (!notification) {
-      return res.status(404).json({ error: "Group invitation notification not found" });
+      const error = new Error("Notifikasi undangan grup tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     if (action === "view_group") {
@@ -170,22 +264,49 @@ router.post("/group-action", authenticateToken, async (req, res) => {
       });
     }
 
-    return res.status(400).json({ error: "Invalid action. Only 'view_group' is supported." });
+    const error = new Error("Action tidak valid. Hanya 'view_group' yang didukung.");
+    error.name = "ValidationError";
+    return next(error);
   } catch (error) {
-    console.error("Group notification action error:", error);
-    res.status(500).json({ error: "Failed to handle group action" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Notifikasi tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 5. Handle Bill Notification Actions
-router.post("/bill-action", authenticateToken, async (req, res) => {
+router.post("/bill-action", authenticateToken, async (req, res, next) => {
   try {
     const { notificationId, action } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     if (!notificationId || !action) {
-      return res.status(400).json({ error: "Notification ID and action required" });
+      const error = new Error("ID notifikasi dan action dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Get notification
@@ -209,7 +330,9 @@ router.post("/bill-action", authenticateToken, async (req, res) => {
     });
 
     if (!notification) {
-      return res.status(404).json({ error: "Bill notification not found" });
+      const error = new Error("Notifikasi tagihan tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Mark notification as read
@@ -252,14 +375,24 @@ router.post("/bill-action", authenticateToken, async (req, res) => {
         });
 
       default:
-        return res.status(400).json({ 
-          error: "Invalid action", 
-          validActions: ["join_bill", "view_bill", "pay_now"]
-        });
+        const error = new Error("Action tidak valid");
+        error.name = "ValidationError";
+        return next(error);
     }
   } catch (error) {
-    console.error("Bill notification action error:", error);
-    res.status(500).json({ error: "Failed to handle bill action" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "Notifikasi tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
