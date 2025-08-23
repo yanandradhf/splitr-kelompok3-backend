@@ -42,3 +42,6 @@ Thumbs.db
 # Prisma
 prisma/migrations/
 " >> .gitignore
+
+#sandbox
+amazonQAnswer.md
