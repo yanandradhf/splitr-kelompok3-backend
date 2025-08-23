@@ -89,13 +89,14 @@ router.get("/info/:billId", authenticateToken, async (req, res) => {
   }
 });
 
-// 2. Create Payment (Instant Transfer)
+// 2. Create Payment (Instant or Scheduled)
 router.post("/create", authenticateToken, async (req, res) => {
   try {
     const {
       billId,
       amount,
-      pin
+      pin,
+      scheduledDate // Tambah scheduledDate parameter
     } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
@@ -178,15 +179,22 @@ router.post("/create", authenticateToken, async (req, res) => {
       });
     }
 
+    // Determine payment type and status
+    const paymentType = scheduledDate ? "scheduled" : "instant";
+    const paymentStatus = scheduledDate ? "completed_scheduled" : "completed";
+    
     // Generate transaction ID
-    const transactionId = `TXN${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    const transactionId = scheduledDate ? 
+      `SCH${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}` :
+      `TXN${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
     // Simulate BNI transfer processing
     const paymentResult = await simulateBNITransfer({
       transactionId,
       amount: parseFloat(amount),
       fromAccount: user.bniAccountNumber,
-      toAccount: bill.host.bniAccountNumber
+      toAccount: bill.host.bniAccountNumber,
+      scheduledDate
     });
 
     if (!paymentResult.success) {
@@ -206,9 +214,10 @@ router.post("/create", authenticateToken, async (req, res) => {
           userId,
           amount: parseFloat(amount),
           paymentMethod: "BNI_TRANSFER",
-          paymentType: "instant",
+          paymentType,
           transactionId,
-          status: "completed",
+          status: paymentStatus,
+          scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
           paidAt: new Date(),
           bniReferenceNumber: paymentResult.bniTransactionId
         }
@@ -218,7 +227,7 @@ router.post("/create", authenticateToken, async (req, res) => {
       await tx.billParticipant.update({
         where: { participantId: participant.participantId },
         data: {
-          paymentStatus: "completed",
+          paymentStatus: paymentStatus,
           paidAt: new Date()
         }
       });
@@ -228,9 +237,11 @@ router.post("/create", authenticateToken, async (req, res) => {
         data: {
           userId,
           billId,
-          activityType: "payment_completed",
-          title: "Payment Completed",
-          description: `You paid Rp ${amount.toLocaleString()} for '${bill.billName}'`
+          activityType: scheduledDate ? "payment_scheduled" : "payment_completed",
+          title: scheduledDate ? "Payment Scheduled" : "Payment Completed",
+          description: scheduledDate ? 
+            `You scheduled payment of Rp ${amount.toLocaleString()} for '${bill.billName}' on ${new Date(scheduledDate).toLocaleDateString()}` :
+            `You paid Rp ${amount.toLocaleString()} for '${bill.billName}'`
         }
       });
 
@@ -250,20 +261,33 @@ router.post("/create", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: "Payment completed successfully",
-      payment: {
+      paymentType,
+      message: scheduledDate ? "Payment scheduled successfully!" : "Payment completed successfully!",
+      receipt: {
         paymentId: result.payment.paymentId,
         transactionId,
+        bniReferenceNumber: paymentResult.bniTransactionId,
         amount: parseFloat(amount),
-        status: "completed",
+        status: paymentStatus,
+        scheduledDate: null,
         paidAt: result.payment.paidAt,
-        bniReferenceNumber: paymentResult.bniTransactionId
+        bill: {
+          billId: bill.billId,
+          billName: bill.billName,
+          hostName: bill.host.name,
+          hostAccount: bill.host.bniAccountNumber
+        },
+        breakdown: {
+          yourShare: parseFloat(amount),
+          adminFee: 0,
+          transferFee: 0,
+          totalPaid: parseFloat(amount)
+        }
       },
-      bill: {
-        billId: bill.billId,
-        billName: bill.billName,
-        hostName: bill.host.name,
-        hostAccount: bill.host.bniAccountNumber
+      nextActions: {
+        canViewReceipt: true,
+        canViewBill: true,
+        canGoHome: true
       }
     });
 
@@ -276,136 +300,7 @@ router.post("/create", authenticateToken, async (req, res) => {
   }
 });
 
-// 3. Schedule Payment (Pay Later)
-router.post("/schedule", authenticateToken, async (req, res) => {
-  try {
-    const {
-      billId,
-      amount,
-      scheduledDate,
-      pin
-    } = req.body;
-    const prisma = req.prisma;
-    const userId = req.user.userId;
 
-    if (!billId || !amount || !scheduledDate || !pin) {
-      return res.status(400).json({ 
-        error: "All fields required for scheduled payment" 
-      });
-    }
-
-    // Verify PIN
-    const user = await prisma.user.findUnique({
-      where: { userId },
-      select: { encryptedPinHash: true, name: true }
-    });
-
-    const isPinValid = await bcrypt.compare(pin, user.encryptedPinHash);
-    if (!isPinValid) {
-      return res.status(401).json({ error: "Invalid PIN" });
-    }
-
-    // Get bill info
-    const bill = await prisma.bill.findUnique({
-      where: { billId },
-      include: {
-        billParticipants: {
-          where: { userId },
-          select: { participantId: true, amountShare: true, paymentStatus: true }
-        }
-      }
-    });
-
-    if (!bill) {
-      return res.status(404).json({ error: "Bill not found" });
-    }
-
-    if (!bill.allowScheduledPayment) {
-      return res.status(400).json({ 
-        error: "Scheduled payment not allowed for this bill" 
-      });
-    }
-
-    const participant = bill.billParticipants[0];
-    if (!participant) {
-      return res.status(403).json({ error: "You are not a participant in this bill" });
-    }
-
-    if (participant.paymentStatus !== "pending") {
-      return res.status(400).json({ error: "Payment already processed or scheduled" });
-    }
-
-    // Verify scheduled date is in the future and before bill deadline
-    const scheduleDate = new Date(scheduledDate);
-    const now = new Date();
-    const billDeadline = new Date(bill.maxPaymentDate);
-
-    if (scheduleDate <= now) {
-      return res.status(400).json({ error: "Scheduled date must be in the future" });
-    }
-
-    if (scheduleDate > billDeadline) {
-      return res.status(400).json({ error: "Scheduled date must be before bill deadline" });
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      // Create scheduled payment
-      const scheduledPayment = await tx.scheduledPayment.create({
-        data: {
-          billId,
-          userId,
-          amount: parseFloat(amount),
-          scheduledDate: scheduleDate,
-          status: "scheduled",
-          pinVerifiedAt: new Date()
-        }
-      });
-
-      // Update participant status
-      await tx.billParticipant.update({
-        where: { participantId: participant.participantId },
-        data: {
-          paymentStatus: "scheduled"
-        }
-      });
-
-      // Create activity log
-      await tx.activityLog.create({
-        data: {
-          userId,
-          billId,
-          activityType: "payment_scheduled",
-          title: "Payment Scheduled",
-          description: `You scheduled payment of Rp ${amount.toLocaleString()} for ${scheduleDate.toLocaleDateString()}`
-        }
-      });
-
-      return { scheduledPayment };
-    });
-
-    res.json({
-      success: true,
-      message: "Payment scheduled successfully",
-      scheduledPayment: {
-        scheduleId: result.scheduledPayment.scheduleId,
-        amount: parseFloat(amount),
-        scheduledDate: scheduleDate,
-        status: "scheduled"
-      },
-      bill: {
-        billId: bill.billId,
-        billName: bill.billName
-      }
-    });
-
-  } catch (error) {
-    console.error("Schedule payment error:", error);
-    res.status(500).json({ 
-      error: "Failed to schedule payment",
-      details: error.message 
-    });
-  }
-});
 
 // 4. Get Payment History
 router.get("/history", authenticateToken, async (req, res) => {
@@ -447,6 +342,8 @@ router.get("/history", authenticateToken, async (req, res) => {
         hostName: payment.bill.host.name,
         amount: parseFloat(payment.amount),
         paymentMethod: payment.paymentMethod,
+        paymentType: payment.paymentType,
+        scheduledDate: payment.scheduledDate,
         transactionId: payment.transactionId,
         status: payment.status,
         paidAt: payment.paidAt,
@@ -466,7 +363,141 @@ router.get("/history", authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Get Payment Status
+// 5. Get Payment Receipt Detail
+router.get("/:paymentId/receipt", authenticateToken, async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    const payment = await prisma.payment.findFirst({
+      where: { 
+        paymentId,
+        userId 
+      },
+      include: {
+        bill: {
+          select: {
+            billId: true,
+            billName: true,
+            billCode: true,
+            category: {
+              select: {
+                categoryName: true,
+                categoryIcon: true
+              }
+            },
+            host: {
+              select: { name: true, bniAccountNumber: true }
+            },
+            billParticipants: {
+              where: { userId },
+              select: {
+                subtotal: true,
+                taxAmount: true,
+                serviceAmount: true,
+                discountAmount: true,
+                amountShare: true
+              }
+            },
+            billItems: {
+              include: {
+                itemAssignments: {
+                  where: {
+                    participant: { userId }
+                  },
+                  select: {
+                    quantityAssigned: true,
+                    amountAssigned: true
+                  }
+                }
+              }
+            }
+          }
+        },
+        user: {
+          select: { name: true, bniAccountNumber: true }
+        }
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: "Payment receipt not found" });
+    }
+
+    const participant = payment.bill.billParticipants[0];
+    const myItems = payment.bill.billItems
+      .filter(item => item.itemAssignments.length > 0)
+      .map(item => {
+        const assignment = item.itemAssignments[0];
+        return {
+          itemName: item.itemName,
+          quantity: assignment.quantityAssigned,
+          price: parseFloat(item.price),
+          amount: parseFloat(assignment.amountAssigned)
+        };
+      });
+
+    res.json({
+      success: true,
+      receipt: {
+        paymentId: payment.paymentId,
+        transactionId: payment.transactionId,
+        bniReferenceNumber: payment.bniReferenceNumber,
+        status: payment.status,
+        paymentType: payment.paymentType,
+        scheduledDate: payment.scheduledDate,
+        amount: parseFloat(payment.amount),
+        paidAt: payment.paidAt,
+        paymentMethod: payment.paymentMethod,
+        
+        bill: {
+          billId: payment.bill.billId,
+          billName: payment.bill.billName,
+          billCode: payment.bill.billCode,
+          category: payment.bill.category?.categoryName || "Other",
+          categoryIcon: payment.bill.category?.categoryIcon || "📦"
+        },
+        
+        payer: {
+          name: payment.user.name,
+          account: payment.user.bniAccountNumber
+        },
+        
+        recipient: {
+          name: payment.bill.host.name,
+          account: payment.bill.host.bniAccountNumber
+        },
+        
+        yourItems: myItems,
+        
+        breakdown: {
+          subtotal: parseFloat(participant?.subtotal || 0),
+          taxAmount: parseFloat(participant?.taxAmount || 0),
+          serviceAmount: parseFloat(participant?.serviceAmount || 0),
+          discountAmount: parseFloat(participant?.discountAmount || 0),
+          yourShare: parseFloat(participant?.amountShare || payment.amount),
+          adminFee: 0,
+          transferFee: 0,
+          totalPaid: parseFloat(payment.amount)
+        },
+        
+        createdAt: payment.createdAt
+      },
+      actions: {
+        canDownloadReceipt: true,
+        canViewBill: true,
+        canContact: true
+      }
+    });
+
+  } catch (error) {
+    console.error("Get payment receipt error:", error);
+    res.status(500).json({ error: "Failed to get payment receipt" });
+  }
+});
+
+// 6. Get Payment Status
 router.get("/:paymentId/status", authenticateToken, async (req, res) => {
   try {
     const { paymentId } = req.params;
@@ -521,9 +552,19 @@ router.get("/:paymentId/status", authenticateToken, async (req, res) => {
 });
 
 // Helper function to simulate BNI transfer (always success for testing)
-async function simulateBNITransfer({ transactionId, amount, fromAccount, toAccount }) {
+async function simulateBNITransfer({ transactionId, amount, fromAccount, toAccount, scheduledDate }) {
   // Simulate processing delay
   await new Promise(resolve => setTimeout(resolve, 500));
+
+  if (scheduledDate) {
+    // Simulate scheduled payment success
+    return {
+      success: true,
+      bniTransactionId: `SCH${Date.now()}${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
+      responseCode: "00",
+      message: `Payment scheduled for ${scheduledDate}`
+    };
+  }
 
   // Always return success for testing
   return {

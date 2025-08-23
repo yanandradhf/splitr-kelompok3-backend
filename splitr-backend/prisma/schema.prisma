@@ -109,7 +109,6 @@ model User {
   groupMemberships  GroupMember[]
   hostedBills       Bill[]              @relation("BillHost")
   payments          Payment[]
-  scheduledPayments ScheduledPayment[]
   notifications     Notification[]
   auth              UserAuth?
   activities        ActivityLog[]
@@ -207,7 +206,6 @@ model Bill {
   category          BillCategory?      @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
   billItems         BillItem[]
   payments          Payment[]
-  scheduledPayments ScheduledPayment[]
   notifications     Notification[]
   activities        ActivityLog[]
   billParticipants  BillParticipant[]
@@ -216,28 +214,7 @@ model Bill {
   @@map("bills")
 }
 
-// Scheduled Payments (untuk jadwal bayar)
-model ScheduledPayment {
-  scheduleId      String    @id @default(uuid()) @map("schedule_id")
-  billId          String    @map("bill_id")
-  userId          String    @map("user_id")
-  amount          Decimal   @db.Decimal(10, 2)
-  scheduledDate   DateTime  @map("scheduled_date")
-  status          String    @default("scheduled") @db.VarChar(20) // scheduled, processing, completed, failed, cancelled
-  pinVerifiedAt   DateTime? @map("pin_verified_at")
-  retryCount      Int       @default(0) @map("retry_count")
-  maxRetry        Int       @default(2) @map("max_retry")
-  failureReason   String?   @map("failure_reason")
-  transactionId   String?   @map("transaction_id") @db.VarChar(100)
-  processedAt     DateTime? @map("processed_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
 
-  // Relations
-  bill Bill @relation(fields: [billId], references: [billId], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
-
-  @@map("scheduled_payments")
-}
 
 // Bill Items model
 model BillItem {
@@ -271,7 +248,8 @@ model Payment {
   amount             Decimal   @db.Decimal(10, 2)
   paymentMethod      String    @default("BNI_TRANSFER") @map("payment_method") @db.VarChar(50)
   paymentType        String    @default("instant") @map("payment_type") @db.VarChar(20) // instant, scheduled
-  status             String    @default("pending") @db.VarChar(20) // pending, completed, failed, cancelled
+  status             String    @default("pending") @db.VarChar(30) // pending, completed, completed_scheduled, failed
+  scheduledDate      DateTime? @map("scheduled_date") // Tambah field untuk scheduled payment
   transactionId      String?   @unique @map("transaction_id") @db.VarChar(100)
   bniReferenceNumber String?   @map("bni_reference_number") @db.VarChar(50)
   fromBranch         String?   @map("from_branch") @db.VarChar(10) // untuk geotagging
@@ -383,6 +361,13 @@ model BillParticipant {
   userId          String?   @map("user_id") // nullable for temp participants
   tempName        String?   @map("temp_name") // for non-users (name only)
   amountShare     Decimal   @map("amount_share") @db.Decimal(10, 2)
+  
+  // Breakdown per participant (from frontend calculation)
+  subtotal        Decimal?  @map("subtotal") @db.Decimal(10, 2)
+  taxAmount       Decimal?  @map("tax_amount") @db.Decimal(10, 2)
+  serviceAmount   Decimal?  @map("service_amount") @db.Decimal(10, 2)
+  discountAmount  Decimal?  @map("discount_amount") @db.Decimal(10, 2)
+  
   paymentStatus   String    @default("pending") @map("payment_status") @db.VarChar(20) // pending, paid, failed
   paidAt          DateTime? @map("paid_at")
   joinedAt        DateTime  @default(now()) @map("joined_at")
