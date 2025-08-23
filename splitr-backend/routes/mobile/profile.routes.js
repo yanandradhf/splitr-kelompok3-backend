@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const router = express.Router();
-const { NotFoundError, BadRequestError, ValidationError, DatabaseError } = require("../../middleware/error.middleware");
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -44,15 +44,21 @@ const JWT_SECRET = process.env.JWT_SECRET || "splitr_secret_key";
 
 // Middleware to verify token
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: "Access token required" });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: "Invalid token" });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
@@ -63,6 +69,18 @@ router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const user = await prisma.user.findUnique({
       where: { userId },
@@ -118,23 +136,66 @@ router.get("/", authenticateToken, async (req, res, next) => {
       },
     });
   } catch (error) {
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
 
 // 2. Update Profile
 router.put("/", authenticateToken, async (req, res, next) => {
-// router.put("/", authenticateToken, upload.single('profilePicture'), async (req, res) => {
   try {
     const { name, phone, email, defaultPaymentMethod } = req.body;
-    // const { name, phone, email, defaultPaymentMethod, emailNotifEnabled, autoDebitEnabled, twoFactorAuthEnabled } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    // if (req.file) {
-    //   const fileBuffer = req.file.buffer;
-    //   const originalName = req.file.originalname;
-    // }
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
+    // Validate at least one field is provided
+    if (!name && !phone && !email && !defaultPaymentMethod) {
+      const error = new Error("Tidak ada field yang diupdate");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate phone format (only numbers and +)
+    if (phone && !/^[+0-9]+$/.test(phone)) {
+      const error = new Error("Nomor telepon tidak valid");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate email format (must contain @ and .)
+    if (email && (!email.includes('@') || !email.includes('.'))) {
+      const error = new Error("Email tidak valid");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate defaultPaymentMethod (only "instant" and "scheduled")
+    if (defaultPaymentMethod && !['instant', 'scheduled'].includes(defaultPaymentMethod)) {
+      const error = new Error("Metode pembayaran hanya boleh 'instant' atau 'scheduled'");
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     const updatedUser = await prisma.user.update({
       where: { userId },
@@ -143,11 +204,6 @@ router.put("/", authenticateToken, async (req, res, next) => {
         ...(phone && { phone }),
         ...(email && { email }),
         ...(defaultPaymentMethod && { defaultPaymentMethod }),
-        // ...(profilePicture && { profilePicture:fileBuffer }),
-        // ...(profilePictureName && { profilePictureName:originalName }),
-        // ...(typeof autoDebitEnabled !== 'undefined' && { autoDebitEnabled }),
-        // ...(typeof emailNotifEnabled !== 'undefined' && { emailNotifEnabled }),
-        // ...(typeof twoFactorAuthEnabled !== 'undefined' && { twoFactorAuthEnabled }),
         updatedAt: new Date(),
       },
       select: {
@@ -156,9 +212,6 @@ router.put("/", authenticateToken, async (req, res, next) => {
         phone: true,
         email: true,
         defaultPaymentMethod: true,
-        // profilePicture: true,
-        // emailNotifEnabled: true,
-        // twoFactorAuthEnabled: true
       },
     });
 
@@ -167,6 +220,21 @@ router.put("/", authenticateToken, async (req, res, next) => {
       user: updatedUser,
     });
   } catch (error) {
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+      error.message = "Email atau nomor telepon sudah digunakan";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "User tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
     next(error);
   }
 });
@@ -182,6 +250,18 @@ router.put("/upload-picture", authenticateToken, upload.single("profilePicture")
     const userId = req.user.userId;
     const filename = req.file.filename;
     const profilePictureUrl = `/uploads/profiles/${filename}`;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Get current user to delete old profile picture
     const currentUser = await prisma.user.findUnique({
@@ -244,6 +324,18 @@ router.delete("/delete-picture", authenticateToken, async (req, res, next) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     // Get current user to delete profile picture file
     const currentUser = await prisma.user.findUnique({
       where: { userId },
@@ -278,6 +370,15 @@ router.delete("/delete-picture", authenticateToken, async (req, res, next) => {
       message: "Profile picture deleted successfully",
     });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -287,6 +388,18 @@ router.get("/picture", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const user = await prisma.user.findUnique({
       where: { userId },
@@ -309,6 +422,15 @@ router.get("/picture", authenticateToken, async (req, res, next) => {
 
     res.sendFile(filePath);
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -320,12 +442,30 @@ router.put("/change-password", authenticateToken, async (req, res, next) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     if (!currentPassword || !newPassword || !confirmPassword) {
       throw new ValidationError("Current password, new password, and confirm password required");
     }
 
     if (newPassword !== confirmPassword) {
       throw new ValidationError("New password and confirm password do not match");
+    }
+
+    if (newPassword.length < 8 || confirmPassword.length < 8) {
+      const error = new Error("Password minimal 8 karakter");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Verify current password
@@ -344,6 +484,11 @@ router.put("/change-password", authenticateToken, async (req, res, next) => {
     if (!isValidPassword) {
       throw new ValidationError("Current password is incorrect");
     }
+    if (isValidPassword && currentPassword === newPassword) {
+      const error = new Error(`Password baru tidak boleh sama dengan password saat ini`);
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     // Update password
     await prisma.userAuth.update({
@@ -355,6 +500,15 @@ router.put("/change-password", authenticateToken, async (req, res, next) => {
 
     res.json({ message: "Password changed successfully" });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -366,12 +520,37 @@ router.put("/change-pin", authenticateToken, async (req, res, next) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     if (!currentPin || !newPin || !confirmPin) {
       throw new ValidationError("Current PIN, new PIN, and confirm PIN required");
     }
 
     if (newPin !== confirmPin) {
       throw new ValidationError("New PIN and confirm PIN do not match");
+    }
+
+    if (newPin.length != 6 || confirmPin.length != 6) {
+      const error = new Error("PIN tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate PIN characters (only numbers)
+    if (newPin && !/^[0-9]+$/.test(newPin)) {
+      const error = new Error("PIN tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Verify current PIN
@@ -387,6 +566,11 @@ router.put("/change-pin", authenticateToken, async (req, res, next) => {
     if (!isValidPin) {
       throw new ValidationError("Current PIN is incorrect");
     }
+    if (isValidPin && currentPin === newPin) {
+      const error = new Error(`PIN baru tidak boleh sama dengan PIN saat ini`);
+      error.name = "ValidationError";
+      return next(error);
+    }
 
     // Update PIN
     await prisma.user.update({
@@ -398,6 +582,15 @@ router.put("/change-pin", authenticateToken, async (req, res, next) => {
 
     res.json({ message: "PIN changed successfully" });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -408,6 +601,18 @@ router.put("/email-notifications-toggle", authenticateToken, async (req, res, ne
     const { emailNotifToggle } = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     if (typeof emailNotifToggle !== "boolean") {
       throw new ValidationError("Invalid input: emailNotifToggle must be a boolean");
@@ -429,6 +634,15 @@ router.put("/email-notifications-toggle", authenticateToken, async (req, res, ne
       message: `Email notifications ${emailNotifToggle ? "enabled" : "disabled"} successfully`,
     });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -439,6 +653,18 @@ router.get("/history", authenticateToken, async (req, res, next) => {
     const { page = 1, limit = 20, status } = req.query;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const where = {
       userId,
@@ -497,6 +723,17 @@ router.get("/history", authenticateToken, async (req, res, next) => {
       },
     });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -507,6 +744,18 @@ router.get("/analytics", authenticateToken, async (req, res, next) => {
     const { period = "30days" } = req.query;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Calculate date range
     let startDate = new Date();

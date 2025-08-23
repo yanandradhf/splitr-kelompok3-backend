@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 const nodemailer = require('nodemailer');
 const { authenticateResetToken } = require("../../middleware/resetPassword.middleware");
-const { NotFoundError, BadRequestError, ValidationError, DatabaseError } = require("../../middleware/error.middleware");
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 const JWT_RESET_SECRET = process.env.JWT_RESET_SECRET || 'splitr_reset_password';
@@ -18,11 +18,17 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
@@ -83,6 +89,15 @@ router.post("/login", async (req, res, next) => {
       },
     });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -145,6 +160,12 @@ router.post("/validate-bni", async (req, res, next) => {
     const { namaRekening, nomorRekening } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!namaRekening || !nomorRekening) {
       throw new ValidationError("Nama rekening and nomor rekening required");
     }
@@ -159,6 +180,15 @@ router.post("/validate-bni", async (req, res, next) => {
 
     res.json({ valid: true, branchCode: account.branchCode });
   } catch (error) {
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
@@ -169,8 +199,19 @@ router.post("/send-otp", async (req, res, next) => {
     const { email } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!email) {
       throw new ValidationError("Email required");
+    }
+    if (email && (!email.includes('@') || !email.includes('.'))) {
+      const error = new Error("Format email tidak valid");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Check if email exists
@@ -187,12 +228,12 @@ router.post("/send-otp", async (req, res, next) => {
     // const url = 'https://sandbox.api.mailtrap.io/api/send';
     // const mailOptions = {
     //   from: 'splitr@mailtrap.com',
-    //   to: toEmail,
+    //   to: email,
     //   subject: 'Hello from your app!',
-    //   text: `Your OTP code is ${otp}`
+    //   text: `Your OTP code is ${otpCode}`
     // };
-
     // await emailTransport.sendMail(mailOptions);
+
     // Delete existing OTP
     await prisma.otpCode.deleteMany({ where: { email } });
 
@@ -208,24 +249,48 @@ router.post("/send-otp", async (req, res, next) => {
 
     res.json({ message: "OTP sent to email", otp: otpCode }); // Show OTP for testing
   } catch (error) {
+    if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
     next(error);
   }
 });
 
 // 4.1. Send OTP for Password Reset
-router.post("/send-reset-otp", async (req, res) => {
+router.post("/send-reset-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!email) {
-      return res.status(400).json({ error: "Email required" });
+      const error = new Error("Email dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate email format
+    if (!email.includes('@') || !email.includes('.')) {
+      const error = new Error("Format email tidak valid");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Check if email exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (!existingUser) {
-      return res.status(400).json({ error: "Email not registered" });
+      const error = new Error("Email tidak terdaftar");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Generate OTP (always 123456 for testing)
@@ -246,19 +311,57 @@ router.post("/send-reset-otp", async (req, res) => {
 
     res.json({ message: "Reset OTP sent to email", otp: otpCode }); // Show OTP for testing
   } catch (error) {
-    console.error("Send reset OTP error:", error);
-    res.status(500).json({ error: "Failed to send reset OTP" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 4.2. Verify Reset OTP
-router.post("/verify-reset-otp", async (req, res) => {
+router.post("/verify-reset-otp", async (req, res, next) => {
   try {
     const { email, otp } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!email || !otp) {
-      return res.status(400).json({ error: "Email and OTP required" });
+      const error = new Error("Email dan OTP dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate email format
+    if (!email.includes('@') || !email.includes('.')) {
+      const error = new Error("Format email tidak valid");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate OTP length
+    if (otp.length != 6) {
+      const error = new Error("OTP tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
+    }
+    // Validate OTP characters (only numbers)
+    if (otp && !/^[0-9]+$/.test(otp)) {
+      const error = new Error("PIN tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     const otpRecord = await prisma.otpCode.findFirst({
@@ -272,7 +375,9 @@ router.post("/verify-reset-otp", async (req, res) => {
     });
 
     if (!otpRecord) {
-      return res.status(400).json({ error: "Invalid or expired OTP" });
+      const error = new Error("OTP tidak valid atau sudah kadaluarsa");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Mark OTP as used
@@ -286,23 +391,50 @@ router.post("/verify-reset-otp", async (req, res) => {
 
     res.json({ verified: true, tempToken });
   } catch (error) {
-    console.error("Verify reset OTP error:", error);
-    res.status(500).json({ error: "Reset OTP verification failed" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 4.3. Reset Password
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", async (req, res, next) => {
   try {
     const { tempToken, newPassword, confirmPassword } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!tempToken || !newPassword || !confirmPassword) {
-      return res.status(400).json({ error: "All fields required" });
+      const error = new Error("Semua field dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     if (newPassword !== confirmPassword) {
-      return res.status(400).json({ error: "Passwords do not match" });
+      const error = new Error("Password tidak cocok");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate password length
+    if (newPassword.length < 8 || confirmPassword.length < 8) {
+      const error = new Error("Password harus minimal 8 karakter");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Verify temp token
@@ -310,17 +442,23 @@ router.post("/reset-password", async (req, res) => {
     try {
       decoded = jwt.verify(tempToken, JWT_SECRET);
     } catch (err) {
-      return res.status(400).json({ error: "Invalid or expired token" });
+      const error = new Error("Token tidak valid atau sudah kadaluarsa");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     if (decoded.purpose !== "reset") {
-      return res.status(400).json({ error: "Invalid token purpose" });
+      const error = new Error("Token tidak valid untuk reset password");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     // Find user by email
     const user = await prisma.user.findUnique({ where: { email: decoded.email } });
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      const error = new Error("User tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Update password
@@ -333,19 +471,59 @@ router.post("/reset-password", async (req, res) => {
 
     res.json({ message: "Password reset successfully" });
   } catch (error) {
-    console.error("Reset password error:", error);
-    res.status(500).json({ error: "Failed to reset password" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "User atau auth tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 5. Verify OTP (Registration)
-router.post("/verify-otp", async (req, res) => {
+router.post("/verify-otp", async (req, res, next) => {
   try {
     const { email, otp } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!email || !otp) {
-      return res.status(400).json({ error: "Email and OTP required" });
+      const error = new Error("Email dan OTP dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate email format
+    if (!email.includes('@') || !email.includes('.')) {
+      const error = new Error("Format email tidak valid");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate OTP length
+    if (otp.length != 6) {
+      const error = new Error("OTP tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate OTP characters (only numbers)
+    if (otp && !/^[0-9]+$/.test(otp)) {
+      const error = new Error("OTP tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     const otpRecord = await prisma.otpCode.findFirst({
@@ -359,7 +537,9 @@ router.post("/verify-otp", async (req, res) => {
     });
 
     if (!otpRecord) {
-      return res.status(400).json({ error: "Invalid or expired OTP" });
+      const error = new Error("OTP tidak valid atau sudah kadaluarsa");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Mark OTP as used
@@ -373,19 +553,58 @@ router.post("/verify-otp", async (req, res) => {
 
     res.json({ verified: true, tempToken });
   } catch (error) {
-    console.error("Verify OTP error:", error);
-    res.status(500).json({ error: "OTP verification failed" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 6. Complete Registration
-router.post("/register", async (req, res) => {
+router.post("/register", async (req, res, next) => {
   try {
     const { tempToken, username, password, pin, namaRekening, nomorRekening, phone } = req.body;
     const prisma = req.prisma;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
     if (!tempToken || !username || !password || !pin || !namaRekening || !nomorRekening || !phone) {
-      return res.status(400).json({ error: "All fields required" });
+      const error = new Error("Semua field dibutuhkan");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      const error = new Error("Password minimal 8 karakter");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate PIN length
+    if (pin.length !== 6) {
+      const error = new Error("PIN tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    // Validate PIN characters (only numbers)
+    if (pin && !/^[0-9]+$/.test(pin)) {
+      const error = new Error("PIN tidak sesuai");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Verify temp token
@@ -393,7 +612,9 @@ router.post("/register", async (req, res) => {
     try {
       decoded = jwt.verify(tempToken, JWT_SECRET);
     } catch (err) {
-      return res.status(400).json({ error: "Invalid or expired token" });
+      const error = new Error("Token tidak valid atau sudah kadaluarsa");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     // Validate BNI account
@@ -402,13 +623,17 @@ router.post("/register", async (req, res) => {
     });
 
     if (!bniAccount) {
-      return res.status(400).json({ error: "Invalid BNI account" });
+      const error = new Error("Akun BNI tidak valid");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Check username
     const existingAuth = await prisma.userAuth.findUnique({ where: { username } });
     if (existingAuth) {
-      return res.status(400).json({ error: "Username already taken" });
+      const error = new Error("Username sudah digunakan");
+      error.name = "ConflictError";
+      return next(error);
     }
 
     // Create user and auth
@@ -460,16 +685,41 @@ router.post("/register", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Registration error:", error);
-    res.status(500).json({ error: "Registration failed" });
+    // Classify database errors
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+      error.message = "Username atau email sudah digunakan";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
 // 7. Get My BNI Account Details
-router.get("/my-account", authenticateToken, async (req, res) => {
+router.get("/my-account", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Get user's BNI account number
     const user = await prisma.user.findUnique({
@@ -478,7 +728,9 @@ router.get("/my-account", authenticateToken, async (req, res) => {
     });
 
     if (!user || !user.bniAccountNumber) {
-      return res.status(404).json({ error: "BNI account not found" });
+      const error = new Error("Akun BNI tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Get account details
@@ -487,7 +739,9 @@ router.get("/my-account", authenticateToken, async (req, res) => {
     });
 
     if (!account) {
-      return res.status(404).json({ error: "Account details not found" });
+      const error = new Error("Detail akun tidak ditemukan");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Get branch details separately
@@ -507,8 +761,19 @@ router.get("/my-account", authenticateToken, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get account error:", error);
-    res.status(500).json({ error: "Failed to get account details" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "User atau akun tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
@@ -539,55 +804,77 @@ router.get("/bni-balance/:accountNumber", async (req, res) => {
 });
 
 // 8. Logout
-router.post("/logout", authenticateToken, async (req, res) => {
+router.post("/logout", authenticateToken, async (req, res, next) => {
   try {
-    const prisma = req.prisma; // Accessing Prisma client from the request object
+    const prisma = req.prisma;
     const { authId } = req.user;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!authId) {
+      const error = new Error("Auth ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // The client should still send the refresh token they want to invalidate.
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
-        // Handle case where Authorization header is missing
-        return res.status(401).json({ message: 'Authorization header missing' });
+      const error = new Error("Authorization header tidak ada");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     const token = authHeader.split(' ')[1];
 
     if (!token) {
-      return res.status(400).json({ error: "Refresh token required for logout" });
+      const error = new Error("Token dibutuhkan untuk logout");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Find the user authentication record using the authId from the access token.
-    // Then, verify that the provided refresh token matches the one stored for this user.
     const auth = await prisma.userAuth.findUnique({
       where: { authId: authId },
     });
 
     // Check if the user auth record exists AND if the provided refresh token matches the stored one.
     if (!auth || auth.refreshToken !== token) {
-      // If the refresh token doesn't match or the record is not found,
-      // it means the provided refresh token is either invalid, already cleared, or belongs to a different session.
-      return res.status(401).json({ error: "Invalid token for this user." });
+      const error = new Error("Token tidak valid untuk user ini");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     // Update the UserAuth record to clear the refresh token and its expiration
     await prisma.userAuth.update({
-      where: { authId: auth.authId }, // Use the authId from the found record
+      where: { authId: auth.authId },
       data: {
-        refreshToken: null,      // Set refreshToken to null
-        refreshTokenExp: null,   // Set refreshTokenExp to null
-        loginAttempts: 0,        // Optionally reset login attempts
-        lockedUntil: null        // Optionally clear any lockout
+        refreshToken: null,
+        refreshTokenExp: null,
+        loginAttempts: 0,
+        lockedUntil: null
       },
     });
 
-
-    // Send a success response. The client is then expected to delete their stored JWTs.
     res.json({ message: "Logout successful." });
-
   } catch (error) {
-    console.error("Logout error:", error);
-    res.status(500).json({ error: "Logout failed" });
+    // Classify database errors
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+      error.message = "User auth tidak ditemukan";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    
+    next(error);
   }
 });
 
