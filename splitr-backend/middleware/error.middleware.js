@@ -5,7 +5,7 @@ const notFoundHandler = (req, res) => {
     error: "NOT_FOUND",
     message: "The requested resource was not found",
     timestamp: new Date().toISOString(),
-    path: req.originalUrl
+    path: req.originalUrl,
   });
 };
 
@@ -144,18 +144,51 @@ const errorHandler = (err, req, res, next) => {
   
   const { status, errorCode, message } = getErrorResponse(err);
   const isDev = process.env.NODE_ENV === "development";
-  
+
   res.status(status).json({
     success: false,
     error: errorCode,
-    message: isDev ? message : (status >= 500 ? "Something went wrong" : message),
+    message: isDev ? message : status >= 500 ? "Something went wrong" : message,
     timestamp: new Date().toISOString(),
     path: req.originalUrl,
-    ...(isDev && { stack: err.stack })
+    ...(isDev && { stack: err.stack }),
   });
 };
 
+// Custom Error Classes
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+class BadRequestError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'BadRequestError';
+  }
+}
+
+class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+class DatabaseError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'DatabaseError';
+  }
+}
+
 module.exports = {
   notFoundHandler,
-  errorHandler
+  errorHandler,
+  NotFoundError,
+  BadRequestError,
+  ValidationError,
+  DatabaseError,
 };

@@ -3,7 +3,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 const nodemailer = require('nodemailer');
-const { authenticateResetToken } = require("../../middleware/resetPassword.middleware")
+const { authenticateResetToken } = require("../../middleware/resetPassword.middleware");
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError } = require("../../middleware/error.middleware");
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 const JWT_RESET_SECRET = process.env.JWT_RESET_SECRET || 'splitr_reset_password';
@@ -37,13 +38,13 @@ const emailTransport = nodemailer.createTransport({
 });
 
 // 1. Login
-router.post("/login", async (req, res) => {
+router.post("/login", async (req, res, next) => {
   try {
     const { username, password } = req.body;
     const prisma = req.prisma;
 
     if (!username || !password) {
-      return res.status(400).json({ error: "Username and password required" });
+      throw new ValidationError("Username and password required");
     }
 
     const auth = await prisma.userAuth.findUnique({
@@ -52,7 +53,7 @@ router.post("/login", async (req, res) => {
     });
 
     if (!auth || !await bcrypt.compare(password, auth.passwordHash)) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      throw new ValidationError("Invalid credentials");
     }
 
     //Tambah refreshtoken dimasukin ke db userauth
@@ -82,8 +83,7 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ error: "Login failed" });
+    next(error);
   }
 });
 
@@ -140,13 +140,13 @@ router.post("/forget-password", authenticateToken, async (req, res) => {
 });
 
 // 3. Validate BNI Account
-router.post("/validate-bni", async (req, res) => {
+router.post("/validate-bni", async (req, res, next) => {
   try {
     const { namaRekening, nomorRekening } = req.body;
     const prisma = req.prisma;
 
     if (!namaRekening || !nomorRekening) {
-      return res.status(400).json({ error: "Nama rekening and nomor rekening required" });
+      throw new ValidationError("Nama rekening and nomor rekening required");
     }
 
     const account = await prisma.bniDummyAccount.findFirst({
@@ -154,30 +154,29 @@ router.post("/validate-bni", async (req, res) => {
     });
 
     if (!account) {
-      return res.status(400).json({ valid: false, message: "BNI account not found or mismatch" });
+      throw new NotFoundError("BNI account not found or mismatch");
     }
 
     res.json({ valid: true, branchCode: account.branchCode });
   } catch (error) {
-    console.error("BNI validation error:", error);
-    res.status(500).json({ error: "Validation failed" });
+    next(error);
   }
 });
 
 // 4. Send OTP for Registration (Mock)
-router.post("/send-otp", async (req, res) => {
+router.post("/send-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
     const prisma = req.prisma;
 
     if (!email) {
-      return res.status(400).json({ error: "Email required" });
+      throw new ValidationError("Email required");
     }
 
     // Check if email exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ error: "Email already registered" });
+      throw new ValidationError("Email already registered");
     }
 
     // Generate OTP (always 123456 for testing)
@@ -209,8 +208,7 @@ router.post("/send-otp", async (req, res) => {
 
     res.json({ message: "OTP sent to email", otp: otpCode }); // Show OTP for testing
   } catch (error) {
-    console.error("Send OTP error:", error);
-    res.status(500).json({ error: "Failed to send OTP" });
+    next(error);
   }
 });
 

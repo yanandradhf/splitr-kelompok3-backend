@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
+const { DatabaseError } = require("../../middleware/error.middleware");
 
 // 1. Get All Categories
-router.get("/", async (req, res) => {
+router.get("/", async (req, res, next) => {
   try {
     const prisma = req.prisma;
 
@@ -24,8 +25,7 @@ router.get("/", async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Get categories error:", error);
-    res.status(500).json({ error: "Failed to get categories" });
+    next(error);
   }
 });
 
