@@ -1,4 +1,4 @@
-# API Contract: Get Notifications
+# API Contract: Get Notifications (🔔)
 
 ## Endpoint
 ```
@@ -6,8 +6,8 @@ GET /api/mobile/notifications
 ```
 
 ## Description
-Retrieves notifications for the authenticated user with pagination and filtering options.
-Mengambil notifikasi untuk pengguna yang terautentikasi dengan opsi filter.
+- Retrieves notifications for the authenticated user with pagination and filtering options.
+- Mengambil notifikasi untuk pengguna yang terautentikasi dengan opsi filter.
 
 ## Authentication
 - **Required**: Yes
@@ -179,7 +179,7 @@ curl -X GET "../api/mobile/notifications?limit=10&offset=0&unreadOnly=true" \
 
 ---
 
-# API Contract: Mark Notification as Read
+# API Contract: Mark Notification as Read (✔️🔔)
 
 ## Endpoint
 ```
@@ -187,8 +187,8 @@ PUT /api/mobile/notifications/:notificationId/read
 ```
 
 ## Description
-Marks a specific notification as read for the authenticated user.
-Menandai notifikasi tertentu sudah dibaca untuk pengguna yang terautentikasi.
+- Marks a specific notification as read for the authenticated user.
+- Menandai notifikasi tertentu sudah dibaca untuk pengguna yang terautentikasi.
 
 ## Authentication
 - **Required**: Yes
@@ -305,7 +305,7 @@ curl -X PUT "../api/mobile/notifications/notif_001/read" \
 
 ---
 
-# API Contract: Mark All Notifications as Read
+# API Contract: Mark All Notifications as Read (✔️🔔)
 
 ## Endpoint
 ```
@@ -313,8 +313,8 @@ PUT /api/mobile/notifications/read-all
 ```
 
 ## Description
-Marks all unread notifications as read for the authenticated user.
-Menandai semua notifikasi yang belum dibaca sebagai terbaca untuk pengguna yang terautentikasi.
+- Marks all unread notifications as read for the authenticated user.
+- Menandai semua notifikasi yang belum dibaca sebagai terbaca untuk pengguna yang terautentikasi.
 
 ## Authentication
 - **Required**: Yes
@@ -415,7 +415,7 @@ curl -X PUT "../api/mobile/notifications/read-all" \
 
 ---
 
-# API Contract: Handle Group Notification Actions
+# API Contract: Handle Group Notification Actions (🔔👥👥👥)
 
 ## Endpoint
 ```
@@ -423,8 +423,8 @@ POST /api/mobile/notifications/group-action
 ```
 
 ## Description
-Handles actions for group-related notifications such as group invitations.
-Menangani aksi untuk notifikasi terkait grup seperti undangan grup.
+- Handles actions for group-related notifications such as group invitations.
+- Menangani aksi untuk notifikasi terkait grup seperti undangan grup.
 
 ## Authentication
 - **Required**: Yes
@@ -569,7 +569,7 @@ curl -X POST "../api/mobile/notifications/group-action" \
 
 ---
 
-# API Contract: Handle Bill Notification Actions
+# API Contract: Handle Bill Notification Actions (🔔🧾)
 
 ## Endpoint
 ```
@@ -577,8 +577,8 @@ POST /api/mobile/notifications/bill-action
 ```
 
 ## Description
-Handles actions for bill-related notifications such as bill invitations, payment reminders, etc.
-Menangani aksi untuk notifikasi terkait tagihan seperti undangan tagihan, pengingat pembayaran, dll.
+- Handles actions for bill-related notifications such as bill invitations, payment reminders, etc.
+- Menangani aksi untuk notifikasi terkait tagihan seperti undangan tagihan, pengingat pembayaran, dll.
 
 ## Authentication
 - **Required**: Yes

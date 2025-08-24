@@ -1,4 +1,4 @@
-# API Contract: Get All Categories
+# API Contract: Get All Categories (🗂️)
 
 ## Endpoint
 ```
@@ -6,8 +6,8 @@ GET /api/mobile/categories
 ```
 
 ## Description
-Retrieves all active bill categories available in the system.
-Mengambil semua kategori tagihan aktif yang tersedia dalam sistem.
+- Retrieves all active bill categories available in the system. 
+- Mengambil semua kategori tagihan aktif yang tersedia dalam sistem.
 
 ## Authentication
 - **Required**: No

@@ -1,12 +1,12 @@
-# API Contract: Get User Groups
+# API Contract: Get User Groups (👥👥👥)
 ## Endpoint
 ```
 GET /api/mobile/groups
 ```
 
 ## Description
-Retrieves all groups where the authenticated user is either the creator or a member. Only active groups are returned.
-Menampilkan data tentang semua grup yang dibuat atau diikuti oleh pengguna yang terautentikasi. Hanya grup aktif yang ditampilkan.
+- Retrieves all groups where the authenticated user is either the creator or a member. Only active groups are returned.
+- Menampilkan data tentang semua grup yang dibuat atau diikuti oleh pengguna yang terautentikasi. Hanya grup aktif yang ditampilkan.
 
 ## Authentication
 - **Required**: Yes
@@ -171,7 +171,7 @@ curl -X GET "../api/mobile/groups" \
 
 ---
 
-# API Contract: Create Group
+# API Contract: Create Group (➕👥👥👥)
 
 ## Endpoint
 ```
@@ -179,8 +179,8 @@ POST /api/mobile/groups/create
 ```
 
 ## Description
-Creates a new group with the authenticated user as the creator and adds specified friends as members.
-Membuat grup baru dengan pengguna yang terautentikasi sebagai pembuat dan menambahkan teman yang ditentukan sebagai anggota.
+- Creates a new group with the authenticated user as the creator and adds specified friends as members.
+- Membuat grup baru dengan pengguna yang terautentikasi sebagai pembuat dan menambahkan teman yang ditentukan sebagai anggota.
 
 ## Authentication
 - **Required**: Yes
@@ -371,7 +371,7 @@ curl -X POST "../api/mobile/groups/create" \
 
 ---
 
-# API Contract: Add Member to Group
+# API Contract: Add Member to Group (➕👥)
 
 ## Endpoint
 ```
@@ -379,8 +379,8 @@ POST /api/mobile/groups/:groupId/members
 ```
 
 ## Description
-Adds a new member to an existing group. Only the group creator can add members, and only friends can be added.
-Menambahkan anggota baru ke grup yang sudah ada. Hanya pembuat grup yang dapat menambahkan anggota, dan hanya teman yang dapat ditambahkan.
+- Adds a new member to an existing group. Only the group creator can add members, and only friends can be added.
+- Menambahkan anggota baru ke grup yang sudah ada. Hanya pembuat grup yang dapat menambahkan anggota, dan hanya teman yang dapat ditambahkan.
 
 ## Authentication
 - **Required**: Yes
@@ -548,7 +548,7 @@ curl -X POST "../api/mobile/groups/grp_123456/members" \
 
 ---
 
-# API Contract: Delete Group Member
+# API Contract: Delete Group Member (➖👥)
 
 ## Endpoint
 ```
@@ -556,8 +556,8 @@ DELETE /api/mobile/groups/:groupId/members/:userId
 ```
 
 ## Description
-Removes a member from an existing group. Only the group creator can remove members, and the creator cannot remove themselves.
-Menghapus anggota grup yang sudah ada. Hanya pembuat grup yang dapat menghapus anggota, dan pembuat tidak dapat menghapus keanggotaanya.
+- Removes a member from an existing group. Only the group creator can remove members, and the creator cannot remove themselves.
+- Menghapus anggota grup yang sudah ada. Hanya pembuat grup yang dapat menghapus anggota, dan pembuat tidak dapat menghapus keanggotaanya.
 
 ## Authentication
 - **Required**: Yes
@@ -702,7 +702,7 @@ curl -X DELETE "../api/mobile/groups/grp_123456/members/usr_004" \
 
 ---
 
-# API Contract: Get Group Details
+# API Contract: Get Group Details (📝👥👥👥)
 
 ## Endpoint
 ```
@@ -710,8 +710,8 @@ GET /api/mobile/groups/:groupId
 ```
 
 ## Description
-Retrieves detailed information about a specific group including members, recent bills, and friendship status. Only group members can access group details.
-Mengambil informasi detail tentang grup tertentu termasuk anggota, tagihan terbaru, dan status pertemanan. Hanya anggota grup yang dapat mengakses detail grup.
+- Retrieves detailed information about a specific group including members, recent bills, and friendship status. Only group members can access group details.
+- Mengambil informasi detail tentang grup tertentu termasuk anggota, tagihan terbaru, dan status pertemanan. Hanya anggota grup yang dapat mengakses detail grup.
 
 ## Authentication
 - **Required**: Yes
@@ -920,7 +920,7 @@ curl -X GET "../api/mobile/groups/grp_123456" \
 
 ---
 
-# API Contract: Edit Group
+# API Contract: Edit Group (✏️👥👥👥)
 
 ## Endpoint
 ```
@@ -928,8 +928,8 @@ PATCH /api/mobile/groups/edit/:groupId
 ```
 
 ## Description
-Updates group information such as name and description. Only the group creator can edit group details.
-Memperbarui informasi grup seperti nama dan deskripsi. Hanya pembuat grup yang dapat mengedit detail grup.
+- Updates group information such as name and description. Only the group creator can edit group details.
+- Memperbarui informasi grup seperti nama dan deskripsi. Hanya pembuat grup yang dapat mengedit detail grup.
 
 ## Authentication
 - **Required**: Yes
@@ -1130,7 +1130,7 @@ curl -X PATCH "../api/mobile/groups/edit/grp_123456" \
 
 ---
 
-# API Contract: Add Friend from Group Member
+# API Contract: Add Friend from Group Member (➕🤝)
 
 ## Endpoint
 ```
@@ -1138,8 +1138,8 @@ POST /api/mobile/groups/:groupId/add-friend/:memberId
 ```
 
 ## Description
-Adds a group member as a friend. Both users must be members of the same group, and they cannot already be friends.
-Menambahkan anggota grup sebagai teman. Kedua pengguna harus menjadi anggota grup yang sama, dan mereka belum berteman sebelumnya.
+- Adds a group member as a friend. Both users must be members of the same group, and they cannot already be friends.
+- Menambahkan anggota grup sebagai teman. Kedua pengguna harus menjadi anggota grup yang sama, dan mereka belum berteman sebelumnya.
 
 ## Authentication
 - **Required**: Yes
@@ -1293,7 +1293,7 @@ curl -X POST "../api/mobile/groups/grp_123456/add-friend/usr_004" \
 
 ---
 
-# API Contract: Leave Group
+# API Contract: Leave Group (❌👥)
 
 ## Endpoint
 ```
@@ -1301,8 +1301,8 @@ POST /api/mobile/groups/:groupId/leave
 ```
 
 ## Description
-Allows a group member to leave the group. The group creator cannot leave and must delete the group instead.
-Memungkinkan anggota grup untuk keluar dari grup. Pembuat grup tidak dapat keluar dan harus menghapus grup sebagai gantinya.
+- Allows a group member to leave the group. The group creator cannot leave and must delete the group instead.
+- Memungkinkan anggota grup untuk keluar dari grup. Pembuat grup tidak dapat keluar dan harus menghapus grup sebagai gantinya.
 
 ## Authentication
 - **Required**: Yes
@@ -1439,7 +1439,7 @@ curl -X POST "../api/mobile/groups/grp_123456/leave" \
 
 ---
 
-# API Contract: Delete Group
+# API Contract: Delete Group (❌👥👥👥)
 
 ## Endpoint
 ```
@@ -1447,8 +1447,8 @@ DELETE /api/mobile/groups/delete/:groupId
 ```
 
 ## Description
-Deletes an entire group and removes all members. Only the group creator can delete the group.
-Menghapus seluruh grup dan menghapus semua anggota. Hanya pembuat grup yang dapat menghapus grup.
+- Deletes an entire group and removes all members. Only the group creator can delete the group.
+- Menghapus seluruh grup dan menghapus semua anggota. Hanya pembuat grup yang dapat menghapus grup.
 
 ## Authentication
 - **Required**: Yes

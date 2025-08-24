@@ -1,4 +1,4 @@
-# API Contract: Get Friends List
+# API Contract: Get Friends List (👥)
 
 ## Endpoint
 ```
@@ -6,8 +6,8 @@ GET /api/mobile/friends
 ```
 
 ## Description
-Retrieves the list of all active friends for the authenticated user.
-Mengambil daftar semua teman aktif untuk pengguna yang terautentikasi.
+- Retrieves the list of all active friends for the authenticated user.
+- Mengambil daftar semua teman aktif untuk pengguna yang terautentikasi.
 
 ## Authentication
 - **Required**: Yes
@@ -158,7 +158,7 @@ curl -X GET "../api/mobile/friends" \
 
 ---
 
-# API Contract: Search User by Username
+# API Contract: Search User by Username (🔍)
 
 ## Endpoint
 ```
@@ -166,8 +166,8 @@ GET /api/mobile/friends/search
 ```
 
 ## Description
-Searches for a user by username to potentially add as a friend.
-Mencari pengguna berdasarkan username untuk kemungkinan ditambahkan sebagai teman.
+- Searches for a user by username to potentially add as a friend.
+- Mencari pengguna berdasarkan username untuk kemungkinan ditambahkan sebagai teman.
 
 ## Authentication
 - **Required**: Yes
@@ -317,7 +317,7 @@ curl -X GET "../api/mobile/friends/search?username=johndoe" \
 
 ---
 
-# API Contract: Add Friend by Username
+# API Contract: Add Friend by Username (➕👥)
 
 ## Endpoint
 ```
@@ -325,8 +325,8 @@ POST /api/mobile/friends/add-by-username
 ```
 
 ## Description
-Adds a user as a friend by their username. Creates a one-way friendship relationship.
-Menambahkan pengguna sebagai teman berdasarkan username mereka. Membuat hubungan pertemanan satu arah.
+- Adds a user as a friend by their username. Creates a one-way friendship relationship.
+- Menambahkan pengguna sebagai teman berdasarkan username mereka. Membuat hubungan pertemanan satu arah.
 
 ## Authentication
 - **Required**: Yes
@@ -499,7 +499,7 @@ curl -X POST "../api/mobile/friends/add-by-username" \
 
 ---
 
-# API Contract: Remove Friend
+# API Contract: Remove Friend (➖👥)
 
 ## Endpoint
 ```
@@ -507,8 +507,8 @@ DELETE /api/mobile/friends/remove/:friendUserId
 ```
 
 ## Description
-Removes a user from the friends list. Only removes the one-way friendship from the authenticated user.
-Menghapus user dari daftar teman. Hanya menghapus pertemanan satu arah dari pengguna yang terautentikasi.
+- Removes a user from the friends list. Only removes the one-way friendship from the authenticated user.
+- Menghapus user dari daftar teman. Hanya menghapus pertemanan satu arah dari pengguna yang terautentikasi.
 
 ## Authentication
 - **Required**: Yes

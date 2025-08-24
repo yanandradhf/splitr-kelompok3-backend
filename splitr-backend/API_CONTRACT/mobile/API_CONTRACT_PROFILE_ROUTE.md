@@ -1,4 +1,4 @@
-# API Contract: Get Profile
+# API Contract: Get Profile (👤)
 
 ## Endpoint
 ```
@@ -6,8 +6,8 @@ GET /api/mobile/profile
 ```
 
 ## Description
-Retrieves the authenticated user's profile information along with account statistics.
-Mengambil informasi profil pengguna yang terautentikasi beserta statistik akun.
+- Retrieves the authenticated user's profile information along with account statistics.
+- Mengambil informasi profil pengguna yang terautentikasi beserta statistik akun.
 
 ## Authentication
 - **Required**: Yes
@@ -173,7 +173,7 @@ curl -X GET "../api/mobile/profile" \
 
 ---
 
-# API Contract: Update Profile
+# API Contract: Update Profile (✏️👤)
 
 ## Endpoint
 ```
@@ -181,8 +181,8 @@ PUT /api/mobile/profile
 ```
 
 ## Description
-Updates the authenticated user's profile information. At least one field must be provided for update.
-Memperbarui informasi profil pengguna yang terautentikasi. Setidaknya satu field harus disediakan untuk pembaruan.
+- Updates the authenticated user's profile information. At least one field must be provided for update.
+- Memperbarui informasi profil pengguna yang terautentikasi. Setidaknya satu field harus disediakan untuk pembaruan.
 
 ## Authentication
 - **Required**: Yes
@@ -374,7 +374,7 @@ curl -X PUT "../api/mobile/profile" \
 
 ---
 
-# API Contract: Get Profile Picture
+# API Contract: Get Profile Picture (🖼️👤)
 
 ## Endpoint
 ```
@@ -382,8 +382,8 @@ GET /api/mobile/profile/picture
 ```
 
 ## Description
-Retrieves the authenticated user's profile picture file. Returns the actual image file.
-Mengambil file gambar profil pengguna yang terautentikasi. Mengembalikan file gambar yang sebenarnya.
+- Retrieves the authenticated user's profile picture file. Returns the actual image file.
+- Mengambil file gambar profil pengguna yang terautentikasi. Mengembalikan file gambar yang sebenarnya.
 
 ## Authentication
 - **Required**: Yes
@@ -490,7 +490,7 @@ Returns binary image data with appropriate Content-Type header.
 
 ---
 
-# API Contract: Upload Profile Picture
+# API Contract: Upload Profile Picture (🖼️⬆️👤)
 
 ## Endpoint
 ```
@@ -498,8 +498,8 @@ PUT /api/mobile/profile/upload-picture
 ```
 
 ## Description
-Uploads a new profile picture for the authenticated user. Replaces existing profile picture if one exists.
-Mengunggah gambar profil baru untuk pengguna yang terautentikasi. Mengganti gambar profil yang ada jika sudah ada.
+- Uploads a new profile picture for the authenticated user. Replaces existing profile picture if one exists.
+- Mengunggah gambar profil baru untuk pengguna yang terautentikasi. Mengganti gambar profil yang ada jika sudah ada.
 
 ## Authentication
 - **Required**: Yes
@@ -652,7 +652,7 @@ curl -X PUT "../api/mobile/profile/upload-picture" \
 
 ---
 
-# API Contract: Delete Profile Picture
+# API Contract: Delete Profile Picture (🖼️❌👤)
 
 ## Endpoint
 ```
@@ -660,8 +660,8 @@ DELETE /api/mobile/profile/delete-picture
 ```
 
 ## Description
-Deletes the authenticated user's profile picture from both database and filesystem.
-Menghapus gambar profil pengguna yang terautentikasi dari database dan sistem file.
+- Deletes the authenticated user's profile picture from both database and filesystem.
+- Menghapus gambar profil pengguna yang terautentikasi dari database dan sistem file.
 
 ## Authentication
 - **Required**: Yes
@@ -770,7 +770,7 @@ curl -X DELETE "../api/mobile/profile/delete-picture" \
 
 ---
 
-# API Contract: Change Password
+# API Contract: Change Password (🔒🔑)
 
 ## Endpoint
 ```
@@ -778,8 +778,8 @@ PUT /api/mobile/profile/change-password
 ```
 
 ## Description
-Changes the authenticated user's password. Requires current password verification.
-Mengubah password pengguna yang terautentikasi. Memerlukan verifikasi password saat ini.
+- Changes the authenticated user's password. Requires current password verification.
+- Mengubah password pengguna yang terautentikasi. Memerlukan verifikasi password saat ini.
 
 ## Authentication
 - **Required**: Yes
@@ -952,7 +952,7 @@ curl -X PUT "../api/mobile/profile/change-password" \
 
 ---
 
-# API Contract: Change PIN
+# API Contract: Change PIN (🔒🔢)
 
 ## Endpoint
 ```
@@ -960,8 +960,8 @@ PUT /api/mobile/profile/change-pin
 ```
 
 ## Description
-Changes the authenticated user's PIN. Requires current PIN verification.
-Mengubah PIN pengguna yang terautentikasi. Memerlukan verifikasi PIN saat ini.
+- Changes the authenticated user's PIN. Requires current PIN verification.
+- Mengubah PIN pengguna yang terautentikasi. Memerlukan verifikasi PIN saat ini.
 
 ## Authentication
 - **Required**: Yes
@@ -1144,7 +1144,7 @@ curl -X PUT "../api/mobile/profile/change-pin" \
 
 ---
 
-# API Contract: Email Notifications Toggle
+# API Contract: Email Notifications Toggle (📧🔔)
 
 ## Endpoint
 ```
@@ -1152,8 +1152,8 @@ PUT /api/mobile/profile/email-notifications-toggle
 ```
 
 ## Description
-Toggles email notifications on or off for the authenticated user.
-Mengaktifkan atau menonaktifkan notifikasi email untuk pengguna yang terautentikasi.
+- Toggles email notifications on or off for the authenticated user.
+- Mengaktifkan atau menonaktifkan notifikasi email untuk pengguna yang terautentikasi.
 
 ## Authentication
 - **Required**: Yes
