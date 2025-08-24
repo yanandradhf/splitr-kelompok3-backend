@@ -101,9 +101,24 @@ router.post("/create", authenticateToken, async (req, res) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    // Debug logging
+    console.log('Payment create request:', {
+      billId,
+      amount,
+      pin: pin ? '***' : 'missing',
+      scheduledDate,
+      userId
+    });
+
     if (!billId || !amount || !pin) {
+      console.log('Missing required fields:', { billId: !!billId, amount: !!amount, pin: !!pin });
       return res.status(400).json({ 
-        error: "Bill ID, amount, and PIN required" 
+        error: "Bill ID, amount, and PIN required",
+        missing: {
+          billId: !billId,
+          amount: !amount,
+          pin: !pin
+        }
       });
     }
 
@@ -120,6 +135,7 @@ router.post("/create", authenticateToken, async (req, res) => {
     // Verify PIN using bcrypt
     const isPinValid = await bcrypt.compare(pin, user.encryptedPinHash);
     if (!isPinValid) {
+      console.log('Invalid PIN for user:', userId);
       return res.status(401).json({ 
         error: "Invalid PIN",
         message: "Please check your 6-digit PIN" 
@@ -147,8 +163,12 @@ router.post("/create", authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "You are not a participant in this bill" });
     }
 
-    if (participant.paymentStatus === "completed") {
-      return res.status(400).json({ error: "Payment already completed" });
+    if (participant.paymentStatus === "completed" || participant.paymentStatus === "paid") {
+      console.log('Payment already completed for participant:', participant.participantId);
+      return res.status(400).json({ 
+        error: "Payment already completed",
+        currentStatus: participant.paymentStatus
+      });
     }
 
     // Check payment deadline
@@ -170,12 +190,22 @@ router.post("/create", authenticateToken, async (req, res) => {
       });
     }
 
-    // Verify amount matches participant's share
-    if (parseFloat(amount) !== parseFloat(participant.amountShare)) {
+    // Verify amount matches participant's share (with tolerance for decimal precision)
+    const expectedAmount = parseFloat(participant.amountShare);
+    const providedAmount = parseFloat(amount);
+    const tolerance = 1; // Allow 1 rupiah difference for decimal precision
+    
+    if (Math.abs(expectedAmount - providedAmount) > tolerance) {
+      console.log('Amount mismatch:', {
+        expected: expectedAmount,
+        provided: providedAmount,
+        difference: Math.abs(expectedAmount - providedAmount)
+      });
       return res.status(400).json({ 
         error: "Amount mismatch",
-        expected: parseFloat(participant.amountShare),
-        provided: parseFloat(amount)
+        expected: expectedAmount,
+        provided: providedAmount,
+        difference: Math.abs(expectedAmount - providedAmount)
       });
     }
 
@@ -195,7 +225,7 @@ router.post("/create", authenticateToken, async (req, res) => {
       fromAccount: user.bniAccountNumber,
       toAccount: bill.host.bniAccountNumber,
       scheduledDate
-    });
+    }, prisma);
 
     if (!paymentResult.success) {
       return res.status(400).json({
@@ -223,11 +253,11 @@ router.post("/create", authenticateToken, async (req, res) => {
         }
       });
 
-      // Update participant status
+      // Update participant status (always 'paid' for both instant and scheduled)
       await tx.billParticipant.update({
         where: { participantId: participant.participantId },
         data: {
-          paymentStatus: paymentStatus,
+          paymentStatus: "paid", // Always 'paid' regardless of payment type
           paidAt: new Date()
         }
       });
@@ -251,8 +281,10 @@ router.post("/create", authenticateToken, async (req, res) => {
           userId: bill.hostId,
           billId,
           type: "payment_received",
-          title: "Payment Received",
-          message: `${user.name} paid Rp ${amount.toLocaleString()} for '${bill.billName}'`
+          title: scheduledDate ? "Scheduled Payment Received" : "Payment Received",
+          message: scheduledDate ? 
+            `${user.name} scheduled payment of Rp ${amount.toLocaleString()} for '${bill.billName}'` :
+            `${user.name} paid Rp ${amount.toLocaleString()} for '${bill.billName}'`
         }
       });
 
@@ -311,8 +343,14 @@ router.get("/history", authenticateToken, async (req, res) => {
 
     const skip = (page - 1) * limit;
 
+    // Only show payments where user is NOT the host (real payments made as participant)
     const payments = await prisma.payment.findMany({
-      where: { userId },
+      where: { 
+        userId,
+        bill: {
+          hostId: { not: userId } // Exclude payments where user is the host
+        }
+      },
       include: {
         bill: {
           select: {
@@ -330,7 +368,12 @@ router.get("/history", authenticateToken, async (req, res) => {
     });
 
     const totalPayments = await prisma.payment.count({
-      where: { userId }
+      where: { 
+        userId,
+        bill: {
+          hostId: { not: userId }
+        }
+      }
     });
 
     res.json({
@@ -497,7 +540,50 @@ router.get("/:paymentId/receipt", authenticateToken, async (req, res) => {
   }
 });
 
-// 6. Get Payment Status
+// 6. Get BNI Account Balance
+router.get("/balance", authenticateToken, async (req, res) => {
+  try {
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Get user's BNI account number
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: { bniAccountNumber: true, name: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Get BNI dummy account balance
+    const bniAccount = await prisma.bniDummyAccount.findUnique({
+      where: { nomorRekening: user.bniAccountNumber },
+      select: { saldo: true, namaRekening: true, branchCode: true }
+    });
+
+    if (!bniAccount) {
+      return res.status(404).json({ error: "BNI account not found" });
+    }
+
+    res.json({
+      success: true,
+      account: {
+        accountNumber: user.bniAccountNumber,
+        accountName: bniAccount.namaRekening,
+        branchCode: bniAccount.branchCode,
+        balance: parseFloat(bniAccount.saldo),
+        formattedBalance: `Rp ${parseFloat(bniAccount.saldo).toLocaleString()}`
+      }
+    });
+
+  } catch (error) {
+    console.error("Get balance error:", error);
+    res.status(500).json({ error: "Failed to get account balance" });
+  }
+});
+
+// 7. Get Payment Status
 router.get("/:paymentId/status", authenticateToken, async (req, res) => {
   try {
     const { paymentId } = req.params;
@@ -551,28 +637,88 @@ router.get("/:paymentId/status", authenticateToken, async (req, res) => {
   }
 });
 
-// Helper function to simulate BNI transfer (always success for testing)
-async function simulateBNITransfer({ transactionId, amount, fromAccount, toAccount, scheduledDate }) {
+// Helper function to simulate BNI transfer with balance deduction
+async function simulateBNITransfer({ transactionId, amount, fromAccount, toAccount, scheduledDate }, prismaInstance) {
   // Simulate processing delay
   await new Promise(resolve => setTimeout(resolve, 500));
 
-  if (scheduledDate) {
-    // Simulate scheduled payment success
+  try {
+    // Get sender's BNI dummy account
+    const senderAccount = await prismaInstance.bniDummyAccount.findUnique({
+      where: { nomorRekening: fromAccount }
+    });
+
+    if (!senderAccount) {
+      return {
+        success: false,
+        code: "01",
+        message: "Sender account not found"
+      };
+    }
+
+    // Check if sufficient balance
+    if (parseFloat(senderAccount.saldo) < amount) {
+      return {
+        success: false,
+        code: "02",
+        message: "Insufficient balance"
+      };
+    }
+
+    // Both instant and scheduled payments deduct balance immediately
+    // Scheduled payment is just a record-keeping feature, not actual scheduling
+
+    // Deduct balance from sender account
+    await prismaInstance.bniDummyAccount.update({
+      where: { nomorRekening: fromAccount },
+      data: {
+        saldo: {
+          decrement: amount
+        }
+      }
+    });
+
+    // Add balance to receiver account (optional - for complete simulation)
+    const receiverAccount = await prismaInstance.bniDummyAccount.findUnique({
+      where: { nomorRekening: toAccount }
+    });
+
+    if (receiverAccount) {
+      await prismaInstance.bniDummyAccount.update({
+        where: { nomorRekening: toAccount },
+        data: {
+          saldo: {
+            increment: amount
+          }
+        }
+      });
+    }
+
     return {
       success: true,
-      bniTransactionId: `SCH${Date.now()}${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
+      bniTransactionId: scheduledDate ? 
+        `SCH${Date.now()}${Math.random().toString(36).substr(2, 8).toUpperCase()}` :
+        `BNI${Date.now()}${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
       responseCode: "00",
-      message: `Payment scheduled for ${scheduledDate}`
+      message: scheduledDate ? 
+        `Scheduled payment processed successfully for ${scheduledDate}` :
+        "Transaction successful",
+      balanceAfter: parseFloat(senderAccount.saldo) - amount
+    };
+
+  } catch (error) {
+    console.error("BNI Transfer simulation error:", error);
+    return {
+      success: false,
+      code: "99",
+      message: "System error occurred"
     };
   }
+}
 
-  // Always return success for testing
-  return {
-    success: true,
-    bniTransactionId: `BNI${Date.now()}${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
-    responseCode: "00",
-    message: "Transaction successful"
-  };
+// Helper function to get prisma instance (for simulateBNITransfer)
+function getPrismaInstance() {
+  return prisma;
 }
 
 module.exports = router;
