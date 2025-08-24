@@ -68,6 +68,18 @@ const indexRouter = require("./routes/index");
 const adminRouter = require("./routes/admin");
 const { notFoundHandler, errorHandler } = require("./middleware/error.middleware");
 
+// Cache control middleware for mobile API
+app.use("/api/mobile", (req, res, next) => {
+  // Disable caching for all mobile API endpoints
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Last-Modified': new Date().toUTCString()
+  });
+  next();
+});
+
 // Use routes
 app.use("/", indexRouter);
 app.use("/api/admin", adminRouter);

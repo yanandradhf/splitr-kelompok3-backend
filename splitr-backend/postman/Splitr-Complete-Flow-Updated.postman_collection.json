@@ -136,7 +136,7 @@
 			"name": "🏠 Host POV - Bill Management",
 			"item": [
 				{
-					"name": "Create Bill with Participants (userId)",
+					"name": "Create Bill - Frontend Calculation with Breakdown",
 					"event": [
 						{
 							"listen": "test",
@@ -178,7 +178,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"billName\": \"Makan Siang Warmindo\",\n  \"categoryId\": null,\n  \"totalAmount\": 118000,\n  \"maxPaymentDate\": \"2024-12-31T23:59:59Z\",\n  \"allowScheduledPayment\": false,\n  \"splitMethod\": \"custom\",\n  \"currency\": \"IDR\",\n  \"items\": [\n    {\n      \"tempItemId\": \"ayam_001\",\n      \"itemName\": \"Ayam Bakar\",\n      \"price\": 18000,\n      \"quantity\": 2,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"teh_001\",\n      \"itemName\": \"Es Teh Manis\",\n      \"price\": 5000,\n      \"quantity\": 4,\n      \"category\": \"beverage\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"ikan_001\",\n      \"itemName\": \"Ikan Bakar\",\n      \"price\": 25000,\n      \"quantity\": 2,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    },\n    {\n      \"tempItemId\": \"nasi_001\",\n      \"itemName\": \"Nasi Putih\",\n      \"price\": 3000,\n      \"quantity\": 4,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true\n    }\n  ],\n  \"participants\": [\n    {\n      \"userId\": \"{{akmal_userId}}\",\n      \"items\": [\n        {\n          \"tempItemId\": \"ayam_001\",\n          \"quantity\": 1,\n          \"amount\": 18000\n        },\n        {\n          \"tempItemId\": \"teh_001\",\n          \"quantity\": 2,\n          \"amount\": 10000\n        },\n        {\n          \"tempItemId\": \"ikan_001\",\n          \"quantity\": 1,\n          \"amount\": 25000\n        },\n        {\n          \"tempItemId\": \"nasi_001\",\n          \"quantity\": 2,\n          \"amount\": 6000\n        }\n      ]\n    }\n  ],\n  \"fees\": {\n    \"taxPct\": 10,\n    \"servicePct\": 0,\n    \"discountPct\": 0,\n    \"discountNominal\": 0,\n    \"subTotal\": 108000,\n    \"taxAmount\": 10800,\n    \"serviceAmount\": 0,\n    \"discountAmount\": 0\n  }\n}"
+							"raw": "{\n  \"billName\": \"Dinner at Sushi Tei - Mall Kelapa Gading\",\n  \"categoryId\": null,\n  \"groupId\": null,\n  \"totalAmount\": 181000,\n  \"receiptImageUrl\": \"https://storage.splitr.app/receipts/2024/12/receipt_20241215_193045.jpg\",\n  \"maxPaymentDate\": \"2024-12-20T23:59:59.000Z\",\n  \"allowScheduledPayment\": true,\n  \"splitMethod\": \"custom\",\n  \"currency\": \"IDR\",\n  \"items\": [\n    {\n      \"tempItemId\": \"salmon_sashimi_001\",\n      \"itemName\": \"Salmon Sashimi (8pcs)\",\n      \"price\": 85000,\n      \"quantity\": 1,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true,\n      \"ocrConfidence\": 0.95\n    },\n    {\n      \"tempItemId\": \"california_roll_002\",\n      \"itemName\": \"California Roll\",\n      \"price\": 45000,\n      \"quantity\": 1,\n      \"category\": \"food_item\",\n      \"isSharing\": false,\n      \"isVerified\": true,\n      \"ocrConfidence\": 0.88\n    },\n    {\n      \"tempItemId\": \"green_tea_003\",\n      \"itemName\": \"Hot Green Tea\",\n      \"price\": 15000,\n      \"quantity\": 2,\n      \"category\": \"beverage\",\n      \"isSharing\": false,\n      \"isVerified\": true,\n      \"ocrConfidence\": 0.85\n    },\n    {\n      \"tempItemId\": \"service_charge_004\",\n      \"itemName\": \"Service Charge\",\n      \"price\": 15000,\n      \"quantity\": 1,\n      \"category\": \"service\",\n      \"isSharing\": true,\n      \"isVerified\": true,\n      \"ocrConfidence\": 1.0\n    }\n  ],\n  \"participants\": [\n    {\n      \"userId\": \"{{akmal_userId}}\",\n      \"items\": [\n        {\n          \"tempItemId\": \"salmon_sashimi_001\",\n          \"quantity\": 1,\n          \"amount\": 85000\n        },\n        {\n          \"tempItemId\": \"california_roll_002\",\n          \"quantity\": 1,\n          \"amount\": 45000\n        },\n        {\n          \"tempItemId\": \"green_tea_003\",\n          \"quantity\": 2,\n          \"amount\": 30000\n        },\n        {\n          \"tempItemId\": \"service_charge_004\",\n          \"quantity\": 1,\n          \"amount\": 15000\n        }\n      ],\n      \"breakdown\": {\n        \"subtotal\": 160000,\n        \"taxAmount\": 16000,\n        \"serviceAmount\": 8000,\n        \"discountAmount\": 3000,\n        \"totalAmount\": 181000\n      }\n    }\n  ],\n  \"fees\": {\n    \"taxPct\": 10.0,\n    \"servicePct\": 5.0,\n    \"discountPct\": 0.0,\n    \"discountNominal\": 3000,\n    \"subTotal\": 175000,\n    \"taxAmount\": 17500,\n    \"serviceAmount\": 8750,\n    \"discountAmount\": 3000\n  }\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/mobile/bills/create",
@@ -298,7 +298,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"billId\": \"{{billId}}\",\n  \"amount\": 59000,\n  \"pin\": \"123456\"\n}"
+							"raw": "{\n  \"billId\": \"{{billId}}\",\n  \"amount\": 181000,\n  \"pin\": \"123456\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/mobile/payments/create",
