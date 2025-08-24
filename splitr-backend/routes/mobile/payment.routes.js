@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const router = express.Router();
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 
@@ -11,22 +12,40 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
 };
 
 // 1. Get Payment Info for Bill
-router.get("/info/:billId", authenticateToken, async (req, res) => {
+router.get("/info/:billId", authenticateToken, async (req, res, next) => {
   try {
     const { billId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Get bill and participant info
     const bill = await prisma.bill.findUnique({
@@ -41,12 +60,16 @@ router.get("/info/:billId", authenticateToken, async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(404).json({ error: "Bill not found" });
+      const error = new Error("Bill not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     const participant = bill.billParticipants[0];
     if (!participant) {
-      return res.status(403).json({ error: "You are not a participant in this bill" });
+      const error = new Error("You are not a participant in this bill");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     // Calculate payment deadline
@@ -84,13 +107,21 @@ router.get("/info/:billId", authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Get payment info error:", error);
-    res.status(500).json({ error: "Failed to get payment info" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 2. Create Payment (Instant or Scheduled)
-router.post("/create", authenticateToken, async (req, res) => {
+router.post("/create", authenticateToken, async (req, res, next) => {
   try {
     const {
       billId,
@@ -101,25 +132,22 @@ router.post("/create", authenticateToken, async (req, res) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    // Debug logging
-    console.log('Payment create request:', {
-      billId,
-      amount,
-      pin: pin ? '***' : 'missing',
-      scheduledDate,
-      userId
-    });
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     if (!billId || !amount || !pin) {
-      console.log('Missing required fields:', { billId: !!billId, amount: !!amount, pin: !!pin });
-      return res.status(400).json({ 
-        error: "Bill ID, amount, and PIN required",
-        missing: {
-          billId: !billId,
-          amount: !amount,
-          pin: !pin
-        }
-      });
+      const error = new Error("Bill ID, amount, and PIN required");
+      error.name = "ValidationError";
+      return next(error);
     }
 
     // Verify PIN (simplified - in production use proper hashing)
@@ -129,17 +157,17 @@ router.post("/create", authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      const error = new Error("User not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Verify PIN using bcrypt
     const isPinValid = await bcrypt.compare(pin, user.encryptedPinHash);
     if (!isPinValid) {
-      console.log('Invalid PIN for user:', userId);
-      return res.status(401).json({ 
-        error: "Invalid PIN",
-        message: "Please check your 6-digit PIN" 
-      });
+      const error = new Error("Invalid PIN");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
     // Get bill and participant info
@@ -324,22 +352,44 @@ router.post("/create", authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Create payment error:", error);
-    res.status(500).json({ 
-      error: "Payment processing failed",
-      details: error.message 
-    });
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+    } else if (error.code === 'P2003') {
+      error.name = "ValidationError";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('transaction')) {
+      error.name = "DatabaseError";
+      error.message = "Database transaction failed, please try again";
+    }
+    next(error);
   }
 });
 
-
-
 // 4. Get Payment History
-router.get("/history", authenticateToken, async (req, res) => {
+router.get("/history", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
     const { page = 1, limit = 10 } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const skip = (page - 1) * limit;
 
@@ -401,17 +451,37 @@ router.get("/history", authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Get payment history error:", error);
-    res.status(500).json({ error: "Failed to get payment history" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 5. Get Payment Receipt Detail
-router.get("/:paymentId/receipt", authenticateToken, async (req, res) => {
+router.get("/:paymentId/receipt", authenticateToken, async (req, res, next) => {
   try {
     const { paymentId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const payment = await prisma.payment.findFirst({
       where: { 
@@ -465,7 +535,9 @@ router.get("/:paymentId/receipt", authenticateToken, async (req, res) => {
     });
 
     if (!payment) {
-      return res.status(404).json({ error: "Payment receipt not found" });
+      const error = new Error("Payment receipt not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     const participant = payment.bill.billParticipants[0];
@@ -535,16 +607,36 @@ router.get("/:paymentId/receipt", authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Get payment receipt error:", error);
-    res.status(500).json({ error: "Failed to get payment receipt" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 6. Get BNI Account Balance
-router.get("/balance", authenticateToken, async (req, res) => {
+router.get("/balance", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Get user's BNI account number
     const user = await prisma.user.findUnique({
@@ -553,7 +645,9 @@ router.get("/balance", authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      const error = new Error("User not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     // Get BNI dummy account balance
@@ -563,7 +657,9 @@ router.get("/balance", authenticateToken, async (req, res) => {
     });
 
     if (!bniAccount) {
-      return res.status(404).json({ error: "BNI account not found" });
+      const error = new Error("BNI account not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     res.json({
@@ -578,17 +674,37 @@ router.get("/balance", authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Get balance error:", error);
-    res.status(500).json({ error: "Failed to get account balance" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 7. Get Payment Status
-router.get("/:paymentId/status", authenticateToken, async (req, res) => {
+router.get("/:paymentId/status", authenticateToken, async (req, res, next) => {
   try {
     const { paymentId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const payment = await prisma.payment.findFirst({
       where: { 
@@ -609,7 +725,9 @@ router.get("/:paymentId/status", authenticateToken, async (req, res) => {
     });
 
     if (!payment) {
-      return res.status(404).json({ error: "Payment not found" });
+      const error = new Error("Payment not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     res.json({
@@ -632,8 +750,16 @@ router.get("/:paymentId/status", authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Get payment status error:", error);
-    res.status(500).json({ error: "Failed to get payment status" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 

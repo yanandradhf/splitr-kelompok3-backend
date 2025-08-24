@@ -1296,3 +1296,372 @@ curl -X PUT "../api/mobile/profile/email-notifications-toggle" \
 - Prisma error handling with custom error names
 - User ID validation from token
 - Type validation for boolean input
+
+---
+
+# API Contract: Get Transaction History (📊💳)
+
+## Endpoint
+```
+GET /api/mobile/profile/history
+```
+
+## Description
+Retrieves the authenticated user's transaction history with pagination and optional status filtering.
+Mengambil riwayat transaksi pengguna yang terautentikasi dengan paginasi dan filter status opsional.
+
+## Authentication
+- **Required**: Yes
+- **Type**: Bearer Token (JWT)
+- **Header**: `Authorization: Bearer <token>`
+
+## Request
+
+### Headers
+```
+Authorization: Bearer <jwt_token>
+```
+
+| Header        | Type   | Required | Description                     |
+|---------------|--------|----------|---------------------------------|
+| Authorization | string | Yes      | Bearer token for authentication |
+
+### Path Parameters
+None
+
+### Query Parameters
+| Parameter | Type   | Required | Default | Description                           |
+|-----------|--------|----------|---------|---------------------------------------|
+| page      | number | No       | 1       | Page number for pagination            |
+| limit     | number | No       | 20      | Number of items per page              |
+| status    | string | No       | None    | Filter by payment status              |
+
+### Request Body
+None
+
+## Response
+
+### Success Response (200 OK)
+```json
+{
+  "history": [
+    {
+      "paymentId": "string",
+      "transactionId": "string",
+      "billId": "string",
+      "billName": "string",
+      "hostName": "string",
+      "amount": number,
+      "status": "string",
+      "paymentType": "string",
+      "paidAt": "ISO 8601 datetime",
+      "createdAt": "ISO 8601 datetime",
+      "category": "string",
+      "categoryIcon": "string"
+    }
+  ],
+  "pagination": {
+    "page": number,
+    "limit": number,
+    "totalPages": number,
+    "totalItems": number
+  }
+}
+```
+
+### Response Schema
+--History Response Object--
+| Field      | Type  | Description                    |
+|------------|-------|--------------------------------|
+| history    | array | List of payment transactions   |
+| pagination | object| Pagination information         |
+
+--Payment Object--
+| Field         | Type   | Description                           |
+|---------------|--------|---------------------------------------|
+| paymentId     | string | Unique identifier for the payment     |
+| transactionId | string | Transaction reference ID              |
+| billId        | string | Associated bill ID                    |
+| billName      | string | Name of the bill                      |
+| hostName      | string | Name of the bill host                 |
+| amount        | number | Payment amount                        |
+| status        | string | Payment status                        |
+| paymentType   | string | Type of payment (instant/scheduled)   |
+| paidAt        | string | ISO 8601 datetime when payment was made |
+| createdAt     | string | ISO 8601 datetime when payment was created |
+| category      | string | Bill category name                    |
+| categoryIcon  | string | Category icon                         |
+
+--Pagination Object--
+| Field      | Type   | Description                    |
+|------------|--------|--------------------------------|
+| page       | number | Current page number            |
+| limit      | number | Items per page                 |
+| totalPages | number | Total number of pages          |
+| totalItems | number | Total number of items          |
+
+### Error Responses
+
+#### 401 Unauthorized
+```json
+{
+  "name": "UnauthorizedError",
+  "error": "Access token dibutuhkan"
+}
+```
+
+#### 401 Unauthorized (Invalid Token)
+```json
+{
+  "name": "ForbiddenError",
+  "error": "Token invalid atau kadaluarsa"
+}
+```
+
+#### 500 Database Error
+```json
+{
+  "name": "DatabaseError",
+  "error": "Koneksi database tidak tersedia"
+}
+```
+
+## Example
+
+### Request
+```bash
+curl -X GET "../api/mobile/profile/history?page=1&limit=10&status=completed" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Response
+```json
+{
+  "history": [
+    {
+      "paymentId": "pay_001",
+      "transactionId": "txn_123456",
+      "billId": "bill_001",
+      "billName": "Weekend Dinner",
+      "hostName": "John Doe",
+      "amount": 75000.00,
+      "status": "completed",
+      "paymentType": "instant",
+      "paidAt": "2024-01-15T14:30:00Z",
+      "createdAt": "2024-01-15T14:25:00Z",
+      "category": "Food",
+      "categoryIcon": "🍽️"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "totalPages": 5,
+    "totalItems": 47
+  }
+}
+```
+
+## Business Logic
+- Only shows payments where user is a participant (not host)
+- Excludes payments for bills hosted by the user
+- Supports pagination with default page=1, limit=20
+- Optional status filtering (pending, completed, failed, etc.)
+- Orders results by creation date (newest first)
+- Includes bill information and host details
+- Shows category information with icons
+- Amount converted to float for proper display
+- Calculates total pages based on total items and limit
+
+## Error Handling
+- JWT validation with proper error classification
+- User ID validation from token
+- Database connection validation
+- Prisma error handling with custom error names
+- Timeout and connection error handling
+- Query parameter parsing and validation
+
+---
+
+# API Contract: Get Spending Analytics (📊💰)
+
+## Endpoint
+```
+GET /api/mobile/profile/analytics
+```
+
+## Description
+Retrieves the authenticated user's spending analytics with category breakdown for a specified time period.
+Mengambil analitik pengeluaran pengguna yang terautentikasi dengan rincian kategori untuk periode waktu tertentu.
+
+## Authentication
+- **Required**: Yes
+- **Type**: Bearer Token (JWT)
+- **Header**: `Authorization: Bearer <token>`
+
+## Request
+
+### Headers
+```
+Authorization: Bearer <jwt_token>
+```
+
+| Header        | Type   | Required | Description                     |
+|---------------|--------|----------|---------------------------------|
+| Authorization | string | Yes      | Bearer token for authentication |
+
+### Path Parameters
+None
+
+### Query Parameters
+| Parameter | Type   | Required | Default | Description                           |
+|-----------|--------|----------|---------|---------------------------------------|
+| period    | string | No       | 30days  | Time period (7days, 30days, thismonth) |
+
+### Request Body
+None
+
+## Response
+
+### Success Response (200 OK)
+```json
+{
+  "period": "string",
+  "spending": {
+    "total": number,
+    "average": number,
+    "highest": number,
+    "lowest": number
+  },
+  "byCategory": [
+    {
+      "category": "string",
+      "icon": "string",
+      "amount": number,
+      "count": number,
+      "percentage": number
+    }
+  ],
+  "transactionCount": number
+}
+```
+
+### Response Schema
+--Analytics Response Object--
+| Field            | Type   | Description                    |
+|------------------|--------|--------------------------------|
+| period           | string | Time period analyzed           |
+| spending         | object | Overall spending statistics    |
+| byCategory       | array  | Spending breakdown by category |
+| transactionCount | number | Total number of transactions   |
+
+--Spending Object--
+| Field   | Type   | Description                    |
+|---------|--------|--------------------------------|
+| total   | number | Total amount spent             |
+| average | number | Average amount per transaction |
+| highest | number | Highest single transaction     |
+| lowest  | number | Lowest single transaction      |
+
+--Category Object--
+| Field      | Type   | Description                           |
+|------------|--------|---------------------------------------|
+| category   | string | Category name                         |
+| icon       | string | Category icon                         |
+| amount     | number | Total amount spent in category        |
+| count      | number | Number of transactions in category    |
+| percentage | number | Percentage of total spending          |
+
+### Error Responses
+
+#### 401 Unauthorized
+```json
+{
+  "name": "UnauthorizedError",
+  "error": "Access token dibutuhkan"
+}
+```
+
+#### 401 Unauthorized (Invalid Token)
+```json
+{
+  "name": "ForbiddenError",
+  "error": "Token invalid atau kadaluarsa"
+}
+```
+
+#### 500 Database Error
+```json
+{
+  "name": "DatabaseError",
+  "error": "Koneksi database tidak tersedia"
+}
+```
+
+## Example
+
+### Request
+```bash
+curl -X GET "../api/mobile/profile/analytics?period=30days" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Response
+```json
+{
+  "period": "30days",
+  "spending": {
+    "total": 450000.00,
+    "average": 75000.00,
+    "highest": 150000.00,
+    "lowest": 25000.00
+  },
+  "byCategory": [
+    {
+      "category": "Food",
+      "icon": "🍽️",
+      "amount": 270000.00,
+      "count": 4,
+      "percentage": 60.0
+    },
+    {
+      "category": "Transport",
+      "icon": "🚗",
+      "amount": 120000.00,
+      "count": 2,
+      "percentage": 26.67
+    },
+    {
+      "category": "Entertainment",
+      "icon": "🎬",
+      "amount": 60000.00,
+      "count": 1,
+      "percentage": 13.33
+    }
+  ],
+  "transactionCount": 6
+}
+```
+
+## Business Logic
+- Analyzes completed payments only
+- Supports three time periods:
+  - "7days": Last 7 days from current date
+  - "30days": Last 30 days from current date (default)
+  - "thismonth": Current calendar month
+- Calculates comprehensive spending statistics
+- Groups transactions by bill category
+- Calculates percentage distribution across categories
+- Includes category icons for visual representation
+- Handles edge cases (no transactions, division by zero)
+- Uses paidAt date for time filtering
+- Includes bill category information with transactions
+
+## Error Handling
+- JWT validation with proper error classification
+- User ID validation from token
+- Database connection validation
+- Period parameter validation (defaults to 30days)
+- Safe mathematical operations (handles empty datasets)
+- Category grouping with fallback to "Other"
+- Prisma error handling with custom error names

@@ -10,22 +10,40 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
     req.user = user;
     next();
   });
 };
 
 // 2. Transform Frontend Data (Helper endpoint)
-router.post("/transform-frontend-data", authenticateToken, async (req, res) => {
+router.post("/transform-frontend-data", authenticateToken, async (req, res, next) => {
   try {
     const frontendData = req.body;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // 1. Category mapping
     const categoryMapping = {
@@ -139,11 +157,14 @@ router.post("/transform-frontend-data", authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Transform data error:", error);
-    res.status(500).json({ 
-      error: "Failed to transform data",
-      details: error.message 
-    });
+    if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
@@ -2933,14 +2954,24 @@ router.post("/join-by-id", authenticateToken, async (req, res) => {
   }
 });
 
-
-
 // 10.1. Get My Payment History
-router.get("/my-payments", authenticateToken, async (req, res) => {
+router.get("/my-payments", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
     const { status = "all", limit = 20, offset = 0 } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     let whereCondition = { payerId: userId };
     if (status !== "all") {
@@ -3001,17 +3032,37 @@ router.get("/my-payments", authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Get payment history error:", error);
-    res.status(500).json({ error: "Failed to get payment history" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // 11. Get User Bills
-router.get("/", authenticateToken, async (req, res) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
     const userId = req.user.userId;
     const { type = "all" } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     let whereCondition;
     if (type === "assigned") {
@@ -3075,15 +3126,21 @@ router.get("/", authenticateToken, async (req, res) => {
       }),
     });
   } catch (error) {
-    console.error("Get bills error:", error);
-    res.status(500).json({ error: "Failed to get bills" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
-
-
 // 12. Edit bill
-router.put("/:billId", authenticateToken, async (req, res) => {
+router.put("/:billId", authenticateToken, async (req, res, next) => {
   try {
     const { billId } = req.params;
     const {
@@ -3101,6 +3158,18 @@ router.put("/:billId", authenticateToken, async (req, res) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
+
     // 1. Verify bill ownership. Only the host can update a bill.
     const bill = await prisma.bill.findUnique({
       where: { billId },
@@ -3108,11 +3177,15 @@ router.put("/:billId", authenticateToken, async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(404).json({ error: "Bill not found" });
+      const error = new Error("Bill not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     if (bill.hostId !== userId) {
-      return res.status(403).json({ error: "Only the bill host can update this bill" });
+      const error = new Error("Only the bill host can update this bill");
+      error.name = "ForbiddenError";
+      return next(error);
     }
     
     // 2. Perform all updates in an atomic transaction to ensure data consistency.
@@ -3178,7 +3251,9 @@ router.put("/:billId", authenticateToken, async (req, res) => {
     });
 
     if (!completeBill) {
-        return res.status(404).json({ error: "Bill not found after update" });
+      const error = new Error("Bill not found after update");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     res.status(200).json({
@@ -3188,20 +3263,44 @@ router.put("/:billId", authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Update bill error:", error);
-    res.status(500).json({
-      error: "Failed to update bill",
-      details: error.message,
-    });
+    if (error.code === 'P2002') {
+      error.name = "ConflictError";
+    } else if (error.code === 'P2003') {
+      error.name = "ValidationError";
+    } else if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('transaction')) {
+      error.name = "DatabaseError";
+      error.message = "Database transaction failed, please try again";
+    }
+    next(error);
   }
 });
 
 // 12. Delete Bills
-router.delete("/:billId", authenticateToken, async (req, res) => {
+router.delete("/:billId", authenticateToken, async (req, res, next) => {
   try {
     const { billId } = req.params;
     const prisma = req.prisma;
     const userId = req.user.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("User ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // 1. Verify bill ownership first. Only the host can delete a bill.
     const bill = await prisma.bill.findUnique({
@@ -3210,11 +3309,15 @@ router.delete("/:billId", authenticateToken, async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(404).json({ error: "Bill not found" });
+      const error = new Error("Bill not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     if (bill.hostId !== userId) {
-      return res.status(403).json({ error: "Only the bill host can delete this bill" });
+      const error = new Error("Only the bill host can delete this bill");
+      error.name = "ForbiddenError";
+      return next(error);
     }
 
     // 2. Use a transaction to ensure all related data is deleted atomically.
