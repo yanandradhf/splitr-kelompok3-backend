@@ -51,11 +51,19 @@ router.get("/", authenticateToken, async (req, res) => {
         },
       }),
       prisma.payment.aggregate({
-        where: { userId, status: "completed" },
+        where: { 
+          userId, 
+          status: { startsWith: "completed" },
+          bill: { hostId: { not: userId } } // Only count payments as participant
+        },
         _sum: { amount: true },
       }),
       prisma.payment.count({
-        where: { userId, status: "pending" },
+        where: { 
+          userId, 
+          status: "pending",
+          bill: { hostId: { not: userId } } // Only count payments as participant
+        },
       }),
     ]);
 
@@ -257,6 +265,9 @@ router.get("/history", authenticateToken, async (req, res) => {
 
     const where = {
       userId,
+      bill: {
+        hostId: { not: userId } // Only show payments as participant
+      },
       ...(status && { status }),
     };
 

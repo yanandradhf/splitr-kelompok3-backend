@@ -1124,11 +1124,11 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
         const otherParticipants = bill.billParticipants.filter(p => p.userId !== userId);
         const paymentSummary = isHost ? {
           totalParticipants: otherParticipants.length,
-          paidCount: otherParticipants.filter(p => p.paymentStatus.startsWith('completed')).length,
+          paidCount: otherParticipants.filter(p => p.paymentStatus === 'paid' || p.paymentStatus.startsWith('completed')).length,
           pendingCount: otherParticipants.filter(p => p.paymentStatus === 'pending').length,
           failedCount: otherParticipants.filter(p => p.paymentStatus === 'failed').length,
           totalPaid: otherParticipants
-            .filter(p => p.paymentStatus.startsWith('completed'))
+            .filter(p => p.paymentStatus === 'paid' || p.paymentStatus.startsWith('completed'))
             .reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
           totalPending: otherParticipants
             .filter(p => p.paymentStatus === 'pending')
@@ -1145,7 +1145,7 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           canPay: myParticipant.paymentStatus === 'pending',
           canSchedule: myParticipant.paymentStatus === 'pending' && bill.allowScheduledPayment && !isExpired,
           showPayNow: myParticipant.paymentStatus === 'pending',
-          isPaid: myParticipant.paymentStatus.startsWith('completed'),
+          isPaid: myParticipant.paymentStatus === 'paid' || myParticipant.paymentStatus.startsWith('completed'),
           isFailed: myParticipant.paymentStatus === 'failed',
           isOverdue: isExpired && myParticipant.paymentStatus === 'pending'
         } : null;
@@ -1154,10 +1154,12 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
         let paymentStatusDisplay = myParticipant?.paymentStatus || "not_participant";
         if (myParticipant?.paymentStatus === 'pending') {
           paymentStatusDisplay = isExpired ? 'overdue' : 'pending'; // Terlambat atau belum bayar
+        } else if (myParticipant?.paymentStatus === 'paid') {
+          paymentStatusDisplay = 'paid'; // Sudah bayar (unified status)
         } else if (myParticipant?.paymentStatus === 'completed') {
-          paymentStatusDisplay = 'completed'; // Sudah bayar langsung
+          paymentStatusDisplay = 'paid'; // Legacy completed -> paid
         } else if (myParticipant?.paymentStatus === 'completed_scheduled') {
-          paymentStatusDisplay = 'completed_scheduled'; // Sudah bayar dengan jadwal
+          paymentStatusDisplay = 'paid'; // Legacy completed_scheduled -> paid
         } else if (myParticipant?.paymentStatus === 'failed') {
           paymentStatusDisplay = 'failed'; // Gagal/kadaluarsa
         }
