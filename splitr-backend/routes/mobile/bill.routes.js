@@ -701,6 +701,17 @@ router.get("/personal/:identifier", authenticateToken, async (req, res) => {
             discountAmount: true
           }
         },
+        payments: {
+          where: { 
+            userId,
+            paymentType: 'scheduled'
+          },
+          select: {
+            scheduledDate: true,
+            paymentType: true,
+            status: true
+          }
+        },
         category: true,
         billItems: {
           include: {
@@ -810,6 +821,8 @@ router.get("/personal/:identifier", authenticateToken, async (req, res) => {
         yourShare: parseFloat(participant.amountShare),
         paymentStatus: participant.paymentStatus,
         paidAt: participant.paidAt,
+        scheduledDate: bill.payments[0]?.scheduledDate || null,
+        paymentType: bill.payments[0]?.paymentType || null,
         category: bill.category?.categoryName,
         hostName: bill.host.name,
         hostAccount: bill.host.bniAccountNumber,
@@ -837,6 +850,9 @@ router.get("/personal/:identifier", authenticateToken, async (req, res) => {
           totalAmount: parseFloat(bill.totalAmount)
         },
         actions,
+        // Add explicit button flags for mobile UI
+        showPayButton: actions.canPay,
+        showScheduleButton: actions.canSchedule,
         createdAt: bill.createdAt,
       }
     });
@@ -1002,6 +1018,9 @@ router.get("/from-notification/:identifier", authenticateToken, async (req, res)
           totalAmount: parseFloat(bill.totalAmount)
         },
         actions,
+        // Add explicit button flags for mobile UI
+        showPayButton: actions.canPay,
+        showScheduleButton: actions.canSchedule,
         createdAt: bill.createdAt,
       }
     });
@@ -1040,6 +1059,14 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
             user: {
               select: { name: true, bniAccountNumber: true }
             }
+          }
+        },
+        payments: {
+          select: {
+            userId: true,
+            scheduledDate: true,
+            paymentType: true,
+            status: true
           }
         },
         category: true,
@@ -1103,32 +1130,38 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
         // For hosts: get all participants payment status (excluding host)
         const participantsStatus = isHost ? bill.billParticipants
           .filter(p => p.userId !== userId) // Exclude host from participants list
-          .map(p => ({
-            participantId: p.participantId,
-            userId: p.userId,
-            name: p.user?.name || 'Unknown',
-            account: p.user?.bniAccountNumber,
-            amountShare: parseFloat(p.amountShare),
-            paymentStatus: p.paymentStatus,
-            paidAt: p.paidAt,
-            breakdown: {
-              subtotal: parseFloat(p.subtotal || 0),
-              taxAmount: parseFloat(p.taxAmount || 0),
-              serviceAmount: parseFloat(p.serviceAmount || 0),
-              discountAmount: parseFloat(p.discountAmount || 0),
-              totalAmount: parseFloat(p.amountShare)
-            }
-          })) : [];
+          .map(p => {
+            // Get payment info for scheduled date (only for scheduled payments)
+            const payment = bill.payments?.find(pay => pay.userId === p.userId && (pay.status === 'pending' || pay.paymentType === 'scheduled'));
+            
+            return {
+              participantId: p.participantId,
+              userId: p.userId,
+              name: p.user?.name || 'Unknown',
+              account: p.user?.bniAccountNumber,
+              amountShare: parseFloat(p.amountShare),
+              paymentStatus: p.paymentStatus,
+              paidAt: p.paidAt,
+              scheduledDate: payment?.scheduledDate || null, // Add scheduled date
+              breakdown: {
+                subtotal: parseFloat(p.subtotal || 0),
+                taxAmount: parseFloat(p.taxAmount || 0),
+                serviceAmount: parseFloat(p.serviceAmount || 0),
+                discountAmount: parseFloat(p.discountAmount || 0),
+                totalAmount: parseFloat(p.amountShare)
+              }
+            };
+          }) : [];
         
         // Payment summary for hosts - use database values only
         const otherParticipants = bill.billParticipants.filter(p => p.userId !== userId);
         const paymentSummary = isHost ? {
           totalParticipants: otherParticipants.length,
-          paidCount: otherParticipants.filter(p => p.paymentStatus === 'paid' || p.paymentStatus.startsWith('completed')).length,
+          paidCount: otherParticipants.filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled').length,
           pendingCount: otherParticipants.filter(p => p.paymentStatus === 'pending').length,
           failedCount: otherParticipants.filter(p => p.paymentStatus === 'failed').length,
           totalPaid: otherParticipants
-            .filter(p => p.paymentStatus === 'paid' || p.paymentStatus.startsWith('completed'))
+            .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled')
             .reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
           totalPending: otherParticipants
             .filter(p => p.paymentStatus === 'pending')
@@ -1140,26 +1173,39 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           } : null
         } : null;
         
+        // Host financial summary - show what host advanced vs what's owed
+        const hostFinancialSummary = isHost ? {
+          hostAdvanced: myParticipant ? parseFloat(myParticipant.amountShare) : 0,
+          totalOwedByOthers: otherParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
+          totalPaidByOthers: otherParticipants
+            .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled')
+            .reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
+          stillOwedToHost: otherParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0) - 
+            otherParticipants
+              .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled')
+              .reduce((sum, p) => sum + parseFloat(p.amountShare), 0)
+        } : null;
+        
         // Action buttons for participants - allow payment even if overdue
         const actions = !isHost && myParticipant ? {
-          canPay: myParticipant.paymentStatus === 'pending',
+          canPay: (myParticipant.paymentStatus === 'pending' || myParticipant.paymentStatus === 'scheduled'),
           canSchedule: myParticipant.paymentStatus === 'pending' && bill.allowScheduledPayment && !isExpired,
-          showPayNow: myParticipant.paymentStatus === 'pending',
-          isPaid: myParticipant.paymentStatus === 'paid' || myParticipant.paymentStatus.startsWith('completed'),
+          showPayNow: (myParticipant.paymentStatus === 'pending' || myParticipant.paymentStatus === 'scheduled'),
+          showSchedulePayment: myParticipant.paymentStatus === 'pending' && bill.allowScheduledPayment && !isExpired,
+          isPaid: myParticipant.paymentStatus === 'completed' || myParticipant.paymentStatus === 'completed_scheduled',
           isFailed: myParticipant.paymentStatus === 'failed',
-          isOverdue: isExpired && myParticipant.paymentStatus === 'pending'
+          isScheduled: myParticipant.paymentStatus === 'scheduled',
+          isOverdue: isExpired && (myParticipant.paymentStatus === 'pending' || myParticipant.paymentStatus === 'scheduled')
         } : null;
         
         // Payment status display text with overdue check
         let paymentStatusDisplay = myParticipant?.paymentStatus || "not_participant";
         if (myParticipant?.paymentStatus === 'pending') {
           paymentStatusDisplay = isExpired ? 'overdue' : 'pending'; // Terlambat atau belum bayar
-        } else if (myParticipant?.paymentStatus === 'paid') {
-          paymentStatusDisplay = 'paid'; // Sudah bayar (unified status)
         } else if (myParticipant?.paymentStatus === 'completed') {
-          paymentStatusDisplay = 'paid'; // Legacy completed -> paid
+          paymentStatusDisplay = 'completed'; // Instant payment completed
         } else if (myParticipant?.paymentStatus === 'completed_scheduled') {
-          paymentStatusDisplay = 'paid'; // Legacy completed_scheduled -> paid
+          paymentStatusDisplay = 'completed_scheduled'; // Scheduled payment completed
         } else if (myParticipant?.paymentStatus === 'failed') {
           paymentStatusDisplay = 'failed'; // Gagal/kadaluarsa
         }
@@ -1170,6 +1216,8 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           billName: bill.billName,
           totalBillAmount: parseFloat(bill.totalAmount),
           yourShare: myParticipant ? parseFloat(myParticipant.amountShare) : 0,
+          // For card display: hosts see total bill, participants see their share
+          displayAmount: isHost ? parseFloat(bill.totalAmount) : (myParticipant ? parseFloat(myParticipant.amountShare) : 0),
           paymentStatus: myParticipant?.paymentStatus || "not_participant", // Original status
           paymentStatusDisplay: paymentStatusDisplay, // Display text
           paidAt: myParticipant?.paidAt,
@@ -1203,8 +1251,15 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           // HOST SPECIFIC DATA
           participantsStatus: participantsStatus,
           paymentSummary: paymentSummary,
+          hostFinancialSummary: hostFinancialSummary,
           // PARTICIPANT SPECIFIC DATA
           actions: actions,
+          // Add button visibility flags for mobile UI
+          showPayButton: actions?.canPay || false,
+          showScheduleButton: actions?.canSchedule || false,
+          // Add scheduled date for mobile UI (show for both scheduled and completed_scheduled)
+          scheduledDate: !isHost && (myParticipant?.paymentStatus === 'scheduled' || myParticipant?.paymentStatus === 'completed_scheduled') ? 
+            bill.payments?.find(pay => pay.userId === userId && pay.paymentType === 'scheduled')?.scheduledDate : null,
           status: bill.status,
           createdAt: bill.createdAt,
         };
@@ -1375,7 +1430,7 @@ router.get("/master/:identifier", authenticateToken, async (req, res) => {
         group: true,
         billInvites: true,
         payments: {
-          where: { status: "completed" },
+          where: { status: { startsWith: "completed" } },
           include: {
             user: {
               select: { name: true }
@@ -1422,7 +1477,7 @@ router.get("/master/:identifier", authenticateToken, async (req, res) => {
           group: true,
           billInvites: true,
           payments: {
-            where: { status: "completed" },
+            where: { status: { startsWith: "completed" } },
             include: {
               user: {
                 select: { name: true }
@@ -1449,7 +1504,7 @@ router.get("/master/:identifier", authenticateToken, async (req, res) => {
     const isHost = bill.hostId === userId;
 
     // Calculate payment summary based on billParticipants data
-    const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed");
+    const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed" || p.paymentStatus === "completed_scheduled");
     const pendingParticipants = bill.billParticipants.filter(p => p.paymentStatus === "pending");
     const scheduledParticipants = bill.billParticipants.filter(p => p.paymentStatus === "scheduled");
     const failedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "failed");
@@ -1528,24 +1583,33 @@ router.get("/master/:identifier", authenticateToken, async (req, res) => {
             isSharedPortion: item.isSharing
           })),
         })),
-        participants: bill.billParticipants.map(p => ({
-          participantId: p.participantId,
-          userId: p.userId,
-          name: p.user?.name || p.tempName,
-          account: p.user?.bniAccountNumber,
-          amountShare: parseFloat(p.amountShare),
-          paymentStatus: p.paymentStatus,
-          paidAt: p.paidAt,
-          joinedAt: p.joinedAt,
-          isHost: p.userId === bill.hostId,
-          breakdown: {
-            subtotal: parseFloat(p.subtotal || 0),
-            taxAmount: parseFloat(p.taxAmount || 0),
-            serviceAmount: parseFloat(p.serviceAmount || 0),
-            discountAmount: parseFloat(p.discountAmount || 0),
-            totalAmount: parseFloat(p.amountShare)
-          }
-        })),
+        participants: bill.billParticipants.map(p => {
+          // Get scheduled payment info for this participant
+          const scheduledPayment = bill.payments?.find(pay => 
+            pay.userId === p.userId && pay.paymentType === 'scheduled'
+          );
+          
+          return {
+            participantId: p.participantId,
+            userId: p.userId,
+            name: p.user?.name || p.tempName,
+            account: p.user?.bniAccountNumber,
+            amountShare: parseFloat(p.amountShare),
+            paymentStatus: p.paymentStatus,
+            paidAt: p.paidAt,
+            scheduledDate: scheduledPayment?.scheduledDate || null,
+            paymentType: scheduledPayment?.paymentType || null,
+            joinedAt: p.joinedAt,
+            isHost: p.userId === bill.hostId,
+            breakdown: {
+              subtotal: parseFloat(p.subtotal || 0),
+              taxAmount: parseFloat(p.taxAmount || 0),
+              serviceAmount: parseFloat(p.serviceAmount || 0),
+              discountAmount: parseFloat(p.discountAmount || 0),
+              totalAmount: parseFloat(p.amountShare)
+            }
+          };
+        }),
         yourShare: userParticipant ? parseFloat(userParticipant.amountShare) : 0,
         yourStatus: userParticipant?.paymentStatus || "not_participant",
         paymentSummary: {
@@ -1675,7 +1739,7 @@ router.get("/:identifier", authenticateToken, async (req, res) => {
           group: true,
           billInvites: true,
           payments: {
-            where: { status: "completed" },
+            where: { status: { startsWith: "completed" } },
           },
           scheduledPayments: {
             where: { status: "scheduled" },

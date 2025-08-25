@@ -253,14 +253,54 @@ router.post("/create", authenticateToken, async (req, res) => {
         }
       });
 
-      // Update participant status (always 'paid' for both instant and scheduled)
+      // Update participant status based on payment type
+      const participantStatus = scheduledDate ? "completed_scheduled" : "completed";
       await tx.billParticipant.update({
         where: { participantId: participant.participantId },
         data: {
-          paymentStatus: "paid", // Always 'paid' regardless of payment type
+          paymentStatus: participantStatus, // Different status based on payment type
           paidAt: new Date()
         }
       });
+
+      // Check if all participants have paid and auto-complete bill
+      const allParticipants = await tx.billParticipant.findMany({
+        where: { billId }
+      });
+
+      const allPaid = allParticipants.every(p => 
+        p.paymentStatus === "completed" || p.paymentStatus === "completed_scheduled"
+      );
+
+      if (allPaid) {
+        // Update bill status to completed
+        await tx.bill.update({
+          where: { billId },
+          data: { status: "completed" }
+        });
+
+        // Create activity log for bill completion
+        await tx.activityLog.create({
+          data: {
+            userId: bill.hostId,
+            billId,
+            activityType: "bill_completed",
+            title: "Bill Completed",
+            description: `All participants have paid for '${bill.billName}' - Bill is now completed`
+          }
+        });
+
+        // Notify host that bill is completed
+        await tx.notification.create({
+          data: {
+            userId: bill.hostId,
+            billId,
+            type: "bill_completed",
+            title: "Bill Completed",
+            message: `All participants have paid for '${bill.billName}' - Your bill is now completed!`
+          }
+        });
+      }
 
       // Create activity log
       await tx.activityLog.create({

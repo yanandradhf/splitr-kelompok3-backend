@@ -43,28 +43,52 @@ router.get("/", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Get stats
-    const [totalBills, totalSpent, pendingPayments] = await Promise.all([
+    // Get bill status stats
+    const [allBills, completedBills, ongoingBills] = await Promise.all([
+      // Total bills (hosted + participated)
       prisma.bill.count({
         where: {
           OR: [{ hostId: userId }, { billParticipants: { some: { userId } } }],
         },
       }),
+      // Completed bills (all participants paid)
+      prisma.bill.count({
+        where: {
+          OR: [{ hostId: userId }, { billParticipants: { some: { userId } } }],
+          status: "completed"
+        },
+      }),
+      // Ongoing bills (has pending payments)
+      prisma.bill.count({
+        where: {
+          OR: [{ hostId: userId }, { billParticipants: { some: { userId } } }],
+          status: "active",
+          billParticipants: {
+            some: {
+              paymentStatus: { in: ["pending", "scheduled"] }
+            }
+          }
+        },
+      })
+    ]);
+
+    // Get payment stats
+    const [totalSpent, pendingPayments] = await Promise.all([
       prisma.payment.aggregate({
         where: { 
           userId, 
           status: { startsWith: "completed" },
-          bill: { hostId: { not: userId } } // Only count payments as participant
+          bill: { hostId: { not: userId } }
         },
         _sum: { amount: true },
       }),
-      prisma.payment.count({
+      prisma.billParticipant.count({
         where: { 
-          userId, 
-          status: "pending",
-          bill: { hostId: { not: userId } } // Only count payments as participant
+          userId,
+          paymentStatus: { in: ["pending", "scheduled"] },
+          bill: { hostId: { not: userId } }
         },
-      }),
+      })
     ]);
 
     res.json({
@@ -81,7 +105,9 @@ router.get("/", authenticateToken, async (req, res) => {
         createdAt: user.createdAt,
       },
       stats: {
-        totalBills,
+        totalBills: allBills,
+        completedBills,
+        ongoingBills,
         totalSpent: parseFloat(totalSpent._sum.amount || 0),
         pendingPayments,
       },
@@ -265,6 +291,7 @@ router.get("/history", authenticateToken, async (req, res) => {
 
     const where = {
       userId,
+      status: { startsWith: "completed" }, // Show completed and completed_scheduled
       bill: {
         hostId: { not: userId } // Only show payments as participant
       },
