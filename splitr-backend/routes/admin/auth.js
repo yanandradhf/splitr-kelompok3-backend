@@ -2,28 +2,62 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_very_secure_secret_key';
 const JWT_EXPIRY = '1h';
 
+// Middleware to verify token
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
+    req.user = user;
+    next();
+  });
+};
+
 // POST /api/admin/auth/login
-router.post("/login", async (req, res) => {
+router.post("/login", async (req, res, next) => {
   try {
     const { username, password } = req.body;
+    const prisma = req.prisma;
 
-    if (!username || !password) {
-      return res.status(400).json({ error: "Username and password are required" });
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
     }
 
-    const admin = await req.prisma.adminUser.findUnique({
+    if (!username || !password) {
+      const error = new Error("Username and password are required");
+      error.name = "ValidationError";
+      return next(error);
+    }
+
+    const admin = await prisma.adminUser.findUnique({
       where: { username },
     });
 
     if (!admin || !await bcrypt.compare(password, admin.passwordHash)) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      const error = new Error("Invalid credentials");
+      error.name = "UnauthorizedError";
+      return next(error);
     }
 
-    await req.prisma.adminUser.update({
+    await prisma.adminUser.update({
       where: { adminId: admin.adminId },
       data: { lastLoginAt: new Date() },
     });
@@ -53,19 +87,31 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Admin login error:", error);
-    res.status(500).json({ error: "Login failed" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // POST /api/admin/auth/logout
-router.post("/logout", (req, res) => {
-  res.clearCookie('token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  });
-  res.json({ message: "Logout successful" });
+router.post("/logout", (req, res, next) => {
+  try {
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+    res.json({ message: "Logout successful" });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // POST /api/admin/auth/register

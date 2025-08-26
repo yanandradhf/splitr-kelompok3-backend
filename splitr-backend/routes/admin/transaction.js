@@ -1,10 +1,38 @@
 const express = require("express");
 const router = express.Router();
+const jwt = require("jsonwebtoken");
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
+
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET || 'your_very_secure_secret_key';
+const JWT_EXPIRY = '1h';
+
+// Middleware to verify token
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
+    req.user = user;
+    next();
+  });
+};
 
 // GET /api/admin/transactions - Enhanced Transaction Table with Filters
-router.get("/", async (req, res) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const {
       page = 1,
       limit = 10,
@@ -16,6 +44,18 @@ router.get("/", async (req, res) => {
       sort_by = "created_at",
       sort_order = "desc",
     } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const take = parseInt(limit);
@@ -214,16 +254,37 @@ router.get("/", async (req, res) => {
       summary,
     });
   } catch (error) {
-    console.error("Transactions list error:", error);
-    res.status(500).json({ error: "Failed to fetch transactions" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/transactions - get spesific transactins by id
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const transactionId = req.params.id;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     const transaction = await prisma.payment.findUnique({
       where: {
@@ -259,20 +320,31 @@ router.get("/:id", async (req, res) => {
     });
 
     if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
+      const error = new Error("Transaction not found");
+      error.name = "NotFoundError";
+      return next(error);
     }
 
     res.json(transaction);
   } catch (error) {
-    console.error("Fetch transaction by ID error:", error);
-    res.status(500).json({ error: "Failed to fetch transaction" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/transactions/export - Clean Filter-based Export
-router.get("/export", async (req, res) => {
+router.get("/export", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const {
       format = "csv",
       // Filter parameters (sync dengan table filters)
@@ -288,6 +360,18 @@ router.get("/export", async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     console.log("Export request:", {
       scope,
@@ -563,19 +647,24 @@ router.get("/export", async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("Export transactions error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to export transactions",
-      message: error.message,
-    });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/transactions/export-count - Get Export Count Preview
-router.get("/export-count", async (req, res) => {
+router.get("/export-count", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const {
       status,
       payment_method,
@@ -585,6 +674,18 @@ router.get("/export-count", async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Build where clause sama seperti export
     const where = {};
@@ -639,16 +740,37 @@ router.get("/export-count", async (req, res) => {
         !!search,
     });
   } catch (error) {
-    console.error("Export count error:", error);
-    res.status(500).json({ error: "Failed to get export count" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/transactions/stats - Transaction Statistics
-router.get("/stats", async (req, res) => {
+router.get("/stats", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const { date_from, date_to } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Build date filter
     const where = {};
@@ -725,8 +847,16 @@ router.get("/stats", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Transaction stats error:", error);
-    res.status(500).json({ error: "Failed to fetch transaction statistics" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 

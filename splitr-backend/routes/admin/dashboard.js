@@ -1,12 +1,51 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const router = express.Router();
-const authenticateJWT=require("./../../middleware/auth.js")
+const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
+
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET || 'your_very_secure_secret_key';
+const JWT_EXPIRY = '1h';
+
+// Middleware to verify token
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    const error = new Error('Access token dibutuhkan');
+    error.name = 'UnauthorizedError';
+    return next(error);
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      const error = new Error('Token invalid atau kadaluarsa');
+      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
+      return next(error);
+    }
+    req.user = user;
+    next();
+  });
+};
 
 // GET /api/admin/dashboard/summary
 //router.get("/protected-admin-route", authenticateJWT, (req, res)
-router.get("/summary", async (req, res) => {
+router.get("/summary",authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     // Get today's date range
     const today = new Date();
@@ -94,16 +133,37 @@ router.get("/summary", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Dashboard summary error:", error);
-    res.status(500).json({ error: "Failed to fetch dashboard summary" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/dashboard/charts/transactions - Transaction Trends Line Chart
-router.get("/charts/transactions", async (req, res) => {
+router.get("/charts/transactions", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const { period = "7days" } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     let startDate,
       endDate,
@@ -268,9 +328,9 @@ router.get("/charts/transactions", async (req, res) => {
         break;
 
       default:
-        return res.status(400).json({
-          error: "Invalid period. Use: 7days, 30days, thismonth, year",
-        });
+        const error = new Error("Invalid period. Use: 7days, 30days, thismonth, year");
+        error.name = "ValidationError";
+        return next(error);
     }
 
     res.json({
@@ -279,16 +339,37 @@ router.get("/charts/transactions", async (req, res) => {
       data: chartData,
     });
   } catch (error) {
-    console.error("Transaction trends error:", error);
-    res.status(500).json({ error: "Failed to fetch transaction trends" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
-});
+})
 
 // GET /api/admin/dashboard/charts/categories - Category Distribution Pie Chart
-router.get("/charts/categories", async (req, res) => {
+router.get("/charts/categories", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const { period = "7days" } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     let startDate, endDate;
     const now = new Date();
@@ -324,7 +405,9 @@ router.get("/charts/categories", async (req, res) => {
         break;
 
       default:
-        return res.status(400).json({ error: "Invalid period" });
+        const error = new Error("Invalid period. Use: 7days, 30days, thismonth, year");
+        error.name = "ValidationError";
+        return next(error);
     }
 
     // Get category data with counts
@@ -369,16 +452,37 @@ router.get("/charts/categories", async (req, res) => {
       data: chartData,
     });
   } catch (error) {
-    console.error("Categories chart error:", error);
-    res.status(500).json({ error: "Failed to fetch categories data" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/dashboard/charts/payment-methods - Payment Methods Pie Chart
-router.get("/charts/payment-methods", async (req, res) => {
+router.get("/charts/payment-methods", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const { period = "7days" } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     let startDate, endDate;
     const now = new Date();
@@ -414,7 +518,9 @@ router.get("/charts/payment-methods", async (req, res) => {
         break;
 
       default:
-        return res.status(400).json({ error: "Invalid period" });
+        const error = new Error("Invalid period");
+        error.name = "ValidationError";
+        return next(error);
     }
 
     const [instantPayments, scheduledPayments] = await Promise.all([
@@ -459,16 +565,37 @@ router.get("/charts/payment-methods", async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error("Payment methods chart error:", error);
-    res.status(500).json({ error: "Failed to fetch payment methods data" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
 // GET /api/admin/dashboard/charts/daily-amount - Daily Amount Split Bar Chart
-router.get("/charts/daily-amount", async (req, res) => {
+router.get("/charts/daily-amount", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
+    const userId = req.user?.userId;
     const { period = "7days" } = req.query;
+
+    if (!prisma) {
+      const error = new Error("Koneksi database tidak tersedia");
+      error.name = "DatabaseError";
+      return next(error);
+    }
+
+    if (!userId) {
+      const error = new Error("Admin ID tidak ditemukan di dalam token");
+      error.name = "UnauthorizedError";
+      return next(error);
+    }
 
     let chartData = [];
     const now = new Date();
@@ -664,7 +791,9 @@ router.get("/charts/daily-amount", async (req, res) => {
         break;
 
       default:
-        return res.status(400).json({ error: "Invalid period" });
+        const error = new Error("Invalid period. Use: 7days, 30days, thismonth, year");
+        error.name = "ValidationError";
+        return next(error);
     }
 
     // Calculate totals
@@ -679,8 +808,16 @@ router.get("/charts/daily-amount", async (req, res) => {
       data: chartData,
     });
   } catch (error) {
-    console.error("Daily amount chart error:", error);
-    res.status(500).json({ error: "Failed to fetch daily amount data" });
+    if (error.code === 'P2025') {
+      error.name = "NotFoundError";
+    } else if (error.code?.startsWith('P')) {
+      error.name = "DatabaseError";
+    } else if (error.message?.includes('timeout')) {
+      error.name = "TimeoutError";
+    } else if (error.message?.includes('connection')) {
+      error.name = "DatabaseError";
+    }
+    next(error);
   }
 });
 
