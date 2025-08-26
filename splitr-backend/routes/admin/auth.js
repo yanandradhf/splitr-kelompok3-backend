@@ -4,30 +4,8 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 const { NotFoundError, BadRequestError, ValidationError, DatabaseError, errorHandler } = require("../../middleware/error.middleware");
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_very_secure_secret_key';
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET || 'your_very_secure_secret_key';
 const JWT_EXPIRY = '1h';
-
-// Middleware to verify token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    const error = new Error('Access token dibutuhkan');
-    error.name = 'UnauthorizedError';
-    return next(error);
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      const error = new Error('Token invalid atau kadaluarsa');
-      error.name = err.name === 'TokenExpiredError' ? 'ExpiredTokenError' : 'ForbiddenError';
-      return next(error);
-    }
-    req.user = user;
-    next();
-  });
-};
 
 // POST /api/admin/auth/login
 router.post("/login", async (req, res, next) => {

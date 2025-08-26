@@ -8,8 +8,7 @@ const JWT_EXPIRY = '1h';
 
 // Middleware to verify token
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = req.cookies?.token;
 
   if (!token) {
     const error = new Error('Access token dibutuhkan');
@@ -33,7 +32,7 @@ const authenticateToken = (req, res, next) => {
 router.get("/summary",authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
-    const userId = req.user?.userId;
+    const adminId = req.user?.adminId;
 
     if (!prisma) {
       const error = new Error("Koneksi database tidak tersedia");
@@ -41,7 +40,7 @@ router.get("/summary",authenticateToken, async (req, res, next) => {
       return next(error);
     }
 
-    if (!userId) {
+    if (!adminId) {
       const error = new Error("Admin ID tidak ditemukan di dalam token");
       error.name = "UnauthorizedError";
       return next(error);
@@ -150,7 +149,7 @@ router.get("/summary",authenticateToken, async (req, res, next) => {
 router.get("/charts/transactions", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
-    const userId = req.user?.userId;
+    const adminId = req.user?.adminId;
     const { period = "7days" } = req.query;
 
     if (!prisma) {
@@ -159,7 +158,7 @@ router.get("/charts/transactions", authenticateToken, async (req, res, next) => 
       return next(error);
     }
 
-    if (!userId) {
+    if (!adminId) {
       const error = new Error("Admin ID tidak ditemukan di dalam token");
       error.name = "UnauthorizedError";
       return next(error);
@@ -356,7 +355,7 @@ router.get("/charts/transactions", authenticateToken, async (req, res, next) => 
 router.get("/charts/categories", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
-    const userId = req.user?.userId;
+    const adminId = req.user?.adminId;
     const { period = "7days" } = req.query;
 
     if (!prisma) {
@@ -365,7 +364,7 @@ router.get("/charts/categories", authenticateToken, async (req, res, next) => {
       return next(error);
     }
 
-    if (!userId) {
+    if (!adminId) {
       const error = new Error("Admin ID tidak ditemukan di dalam token");
       error.name = "UnauthorizedError";
       return next(error);
@@ -469,7 +468,7 @@ router.get("/charts/categories", authenticateToken, async (req, res, next) => {
 router.get("/charts/payment-methods", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
-    const userId = req.user?.userId;
+    const adminId = req.user?.adminId;
     const { period = "7days" } = req.query;
 
     if (!prisma) {
@@ -478,7 +477,7 @@ router.get("/charts/payment-methods", authenticateToken, async (req, res, next) 
       return next(error);
     }
 
-    if (!userId) {
+    if (!adminId) {
       const error = new Error("Admin ID tidak ditemukan di dalam token");
       error.name = "UnauthorizedError";
       return next(error);
@@ -582,7 +581,7 @@ router.get("/charts/payment-methods", authenticateToken, async (req, res, next) 
 router.get("/charts/daily-amount", authenticateToken, async (req, res, next) => {
   try {
     const prisma = req.prisma;
-    const userId = req.user?.userId;
+    const adminId = req.user?.adminId;
     const { period = "7days" } = req.query;
 
     if (!prisma) {
@@ -591,7 +590,7 @@ router.get("/charts/daily-amount", authenticateToken, async (req, res, next) => 
       return next(error);
     }
 
-    if (!userId) {
+    if (!adminId) {
       const error = new Error("Admin ID tidak ditemukan di dalam token");
       error.name = "UnauthorizedError";
       return next(error);
