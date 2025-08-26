@@ -39,6 +39,7 @@ router.get("/", authenticateToken, async (req, res) => {
             name: true,
             email: true,
             bniAccountNumber: true,
+            profilePhotoUrl: true,
           },
         },
       },
@@ -55,6 +56,7 @@ router.get("/", authenticateToken, async (req, res) => {
           name: friendship.friend.name,
           email: friendship.friend.email,
           accountNumber: friendship.friend.bniAccountNumber,
+          profilePhotoUrl: friendship.friend.profilePhotoUrl || null,
         },
         status: friendship.status,
         createdAt: friendship.createdAt,
@@ -101,6 +103,7 @@ router.get("/search", authenticateToken, async (req, res) => {
         name: true,
         email: true,
         bniAccountNumber: true,
+        profilePhotoUrl: true,
         auth: {
           select: {
             username: true
@@ -126,7 +129,8 @@ router.get("/search", authenticateToken, async (req, res) => {
         username: user.auth.username,
         name: user.name,
         email: user.email,
-        accountNumber: user.bniAccountNumber
+        accountNumber: user.bniAccountNumber,
+        profilePhotoUrl: user.profilePhotoUrl || null,
       },
       isAlreadyFriend,
       canAddFriend: !isAlreadyFriend

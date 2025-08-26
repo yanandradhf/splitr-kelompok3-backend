@@ -96,13 +96,11 @@ model User {
   isVerified           Boolean  @default(false) @map("is_verified")
   defaultPaymentMethod String   @default("instant") @map("default_payment_method") @db.VarChar(20)
   autoDebitEnabled     Boolean  @default(false) @map("auto_debit_enabled")
+  profilePhotoUrl      String?  @map("profile_photo_url") @db.VarChar(255)
+  emailNotifToogle     Boolean  @default(true) @map("email_notif_toogle")
   fcmToken             String?  @map("fcm_token")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
-
-  // profilePicture       String   @db.VarChar(100)
-  // emailNotifEnabled    Boolean  @default(false) @map("_debit_enabled")
-  // twoFactorAuthEnabled Boolean  @default(false) @map("auto_debit_enabled")
 
   // Relations (same as before)
   createdGroups     Group[]             @relation("GroupCreator")
@@ -117,6 +115,7 @@ model User {
   billParticipants  BillParticipant[]
   createdInvites    BillInvite[]
   joinLogs          BillJoinLog[]
+  billComments      BillComment[]
   
   @@map("users")
 }
@@ -211,6 +210,7 @@ model Bill {
   billParticipants  BillParticipant[]
   itemAssignments   ItemAssignment[]
   billInvites       BillInvite[]
+  billComments      BillComment[]
   @@map("bills")
 }
 
@@ -437,4 +437,20 @@ model BillJoinLog {
   user         User?      @relation(fields: [userId], references: [userId], onDelete: SetNull)
 
   @@map("bill_join_logs")
+}
+
+// Bill Comments model
+model BillComment {
+  commentId     String   @id @default(uuid()) @map("comment_id")
+  billId        String   @map("bill_id")
+  userId        String   @map("user_id")
+  message       String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  bill          Bill     @relation(fields: [billId], references: [billId], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  
+  @@index([billId, createdAt])
+  @@map("bill_comments")
 }

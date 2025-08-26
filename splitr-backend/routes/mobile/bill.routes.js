@@ -1,5 +1,5 @@
-const express = require("express");
-const jwt = require("jsonwebtoken");
+const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
@@ -1057,7 +1057,7 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
         billParticipants: {
           include: {
             user: {
-              select: { name: true, bniAccountNumber: true }
+              select: { name: true, bniAccountNumber: true, profilePhotoUrl: true }
             }
           }
         },
@@ -1139,6 +1139,7 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
               userId: p.userId,
               name: p.user?.name || 'Unknown',
               account: p.user?.bniAccountNumber,
+              profilePhotoUrl: p.user?.profilePhotoUrl || null,
               amountShare: parseFloat(p.amountShare),
               paymentStatus: p.paymentStatus,
               paidAt: p.paidAt,
@@ -1157,11 +1158,11 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
         const otherParticipants = bill.billParticipants.filter(p => p.userId !== userId);
         const paymentSummary = isHost ? {
           totalParticipants: otherParticipants.length,
-          paidCount: otherParticipants.filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled').length,
+          paidCount: otherParticipants.filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled' || p.paymentStatus === 'completed_late').length,
           pendingCount: otherParticipants.filter(p => p.paymentStatus === 'pending').length,
           failedCount: otherParticipants.filter(p => p.paymentStatus === 'failed').length,
           totalPaid: otherParticipants
-            .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled')
+            .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled' || p.paymentStatus === 'completed_late')
             .reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
           totalPending: otherParticipants
             .filter(p => p.paymentStatus === 'pending')
@@ -1178,11 +1179,11 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           hostAdvanced: myParticipant ? parseFloat(myParticipant.amountShare) : 0,
           totalOwedByOthers: otherParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
           totalPaidByOthers: otherParticipants
-            .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled')
+            .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled' || p.paymentStatus === 'completed_late')
             .reduce((sum, p) => sum + parseFloat(p.amountShare), 0),
           stillOwedToHost: otherParticipants.reduce((sum, p) => sum + parseFloat(p.amountShare), 0) - 
             otherParticipants
-              .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled')
+              .filter(p => p.paymentStatus === 'completed' || p.paymentStatus === 'completed_scheduled' || p.paymentStatus === 'completed_late')
               .reduce((sum, p) => sum + parseFloat(p.amountShare), 0)
         } : null;
         
@@ -1192,7 +1193,7 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           canSchedule: myParticipant.paymentStatus === 'pending' && bill.allowScheduledPayment && !isExpired,
           showPayNow: (myParticipant.paymentStatus === 'pending' || myParticipant.paymentStatus === 'scheduled'),
           showSchedulePayment: myParticipant.paymentStatus === 'pending' && bill.allowScheduledPayment && !isExpired,
-          isPaid: myParticipant.paymentStatus === 'completed' || myParticipant.paymentStatus === 'completed_scheduled',
+          isPaid: myParticipant.paymentStatus === 'completed' || myParticipant.paymentStatus === 'completed_scheduled' || myParticipant.paymentStatus === 'completed_late',
           isFailed: myParticipant.paymentStatus === 'failed',
           isScheduled: myParticipant.paymentStatus === 'scheduled',
           isOverdue: isExpired && (myParticipant.paymentStatus === 'pending' || myParticipant.paymentStatus === 'scheduled')
@@ -1206,6 +1207,8 @@ router.get("/my-activity", authenticateToken, async (req, res) => {
           paymentStatusDisplay = 'completed'; // Instant payment completed
         } else if (myParticipant?.paymentStatus === 'completed_scheduled') {
           paymentStatusDisplay = 'completed_scheduled'; // Scheduled payment completed
+        } else if (myParticipant?.paymentStatus === 'completed_late') {
+          paymentStatusDisplay = 'completed_late'; // Late payment completed
         } else if (myParticipant?.paymentStatus === 'failed') {
           paymentStatusDisplay = 'failed'; // Gagal/kadaluarsa
         }
@@ -1504,7 +1507,7 @@ router.get("/master/:identifier", authenticateToken, async (req, res) => {
     const isHost = bill.hostId === userId;
 
     // Calculate payment summary based on billParticipants data
-    const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed" || p.paymentStatus === "completed_scheduled");
+    const completedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "completed" || p.paymentStatus === "completed_scheduled" || p.paymentStatus === "completed_late");
     const pendingParticipants = bill.billParticipants.filter(p => p.paymentStatus === "pending");
     const scheduledParticipants = bill.billParticipants.filter(p => p.paymentStatus === "scheduled");
     const failedParticipants = bill.billParticipants.filter(p => p.paymentStatus === "failed");
@@ -3177,6 +3180,208 @@ router.delete("/:billId/participant/:participantId", authenticateToken, async (r
     res.status(500).json({
       error: "Failed to remove participant",
       details: error.message,
+    });
+  }
+});
+
+// Comments API - GET Comments
+router.get("/:billId/comments", authenticateToken, async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Verify user is participant in this bill
+    const userParticipant = await prisma.billParticipant.findFirst({
+      where: { billId, userId }
+    });
+
+    if (!userParticipant) {
+      return res.status(403).json({
+        success: false,
+        error: "UNAUTHORIZED",
+        message: "You are not a participant of this bill"
+      });
+    }
+
+    // Get all comments for this bill
+    const comments = await prisma.billComment.findMany({
+      where: { billId },
+      include: {
+        user: {
+          select: {
+            name: true,
+            profilePhotoUrl: true
+          }
+        }
+      },
+      orderBy: { createdAt: "asc" }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        comments: comments.map(comment => ({
+          id: comment.commentId,
+          billId: comment.billId,
+          userId: comment.userId,
+          userName: comment.user.name,
+          userAvatar: comment.user.profilePhotoUrl || null,
+          message: comment.message,
+          createdAt: comment.createdAt.toISOString()
+        })),
+        totalCount: comments.length
+      }
+    });
+  } catch (error) {
+    console.error("Get comments error:", error);
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_ERROR",
+      message: "Failed to get comments"
+    });
+  }
+});
+
+// Comments API - POST Comment
+router.post("/:billId/comments", authenticateToken, async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { message } = req.body;
+    const prisma = req.prisma;
+    const userId = req.user.userId;
+
+    // Validate message
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "VALIDATION_ERROR",
+        message: "Message cannot be empty"
+      });
+    }
+
+    if (message.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: "VALIDATION_ERROR",
+        message: "Message cannot exceed 500 characters"
+      });
+    }
+
+    // Verify bill exists
+    const bill = await prisma.bill.findUnique({
+      where: { billId }
+    });
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        error: "NOT_FOUND",
+        message: "Bill not found"
+      });
+    }
+
+    // Verify user is participant in this bill
+    const userParticipant = await prisma.billParticipant.findFirst({
+      where: { billId, userId }
+    });
+
+    if (!userParticipant) {
+      return res.status(403).json({
+        success: false,
+        error: "UNAUTHORIZED",
+        message: "You are not a participant of this bill"
+      });
+    }
+
+    // Check for spam - last comment within 2 minutes
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    const recentComment = await prisma.billComment.findFirst({
+      where: {
+        billId,
+        userId,
+        createdAt: { gte: twoMinutesAgo }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (recentComment) {
+      return res.status(429).json({
+        success: false,
+        error: "RATE_LIMIT",
+        message: "Please wait 2 minutes before posting another comment"
+      });
+    }
+
+    // Get user info
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: {
+        name: true,
+        profilePhotoUrl: true
+      }
+    });
+
+    // Create comment
+    const comment = await prisma.billComment.create({
+      data: {
+        billId,
+        userId,
+        message: message.trim()
+      }
+    });
+
+    // Send notifications to other participants
+    const otherParticipants = await prisma.billParticipant.findMany({
+      where: {
+        billId,
+        userId: { not: userId }
+      },
+      include: {
+        user: { select: { name: true } }
+      }
+    });
+
+    // Create notifications for other participants
+    if (otherParticipants.length > 0) {
+      await prisma.notification.createMany({
+        data: otherParticipants.map(participant => ({
+          userId: participant.userId,
+          billId,
+          type: "bill_comment",
+          title: "New Comment",
+          message: `${user.name} commented on '${bill.billName}': ${message.trim().substring(0, 50)}${message.length > 50 ? '...' : ''}`,
+          metadata: {
+            action: "view_bill_master",
+            billId: billId,
+            billName: bill.billName,
+            commenterId: userId,
+            commenterName: user.name
+          }
+        }))
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        comment: {
+          id: comment.commentId,
+          billId: comment.billId,
+          userId: comment.userId,
+          userName: user.name,
+          userAvatar: user.profilePhotoUrl || null,
+          message: comment.message,
+          createdAt: comment.createdAt.toISOString()
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Post comment error:", error);
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_ERROR",
+      message: "Failed to post comment"
     });
   }
 });

@@ -5,21 +5,11 @@ const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 
-// Middleware to verify token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// Import secure authentication middleware
+const { authenticateSecure } = require('../../middleware/auth.middleware');
 
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
-  });
-};
+// Use secure authentication for all payment routes (single session)
+const authenticateToken = authenticateSecure;
 
 // 1. Get Payment Info for Bill
 router.get("/info/:billId", authenticateToken, async (req, res) => {
@@ -171,24 +161,12 @@ router.post("/create", authenticateToken, async (req, res) => {
       });
     }
 
-    // Check payment deadline
+    // Check if payment is late
     const now = new Date();
     const deadline24h = new Date(bill.createdAt.getTime() + 24 * 60 * 60 * 1000);
     const maxPaymentDate = new Date(bill.maxPaymentDate);
-    
-    let paymentDeadline = bill.allowScheduledPayment ? maxPaymentDate : deadline24h;
-    
-    if (now > paymentDeadline) {
-      // Mark as failed if expired
-      await prisma.billParticipant.update({
-        where: { participantId: participant.participantId },
-        data: { paymentStatus: "failed" }
-      });
-      return res.status(400).json({ 
-        error: "Payment deadline expired",
-        deadline: paymentDeadline
-      });
-    }
+    const paymentDeadline = bill.allowScheduledPayment ? maxPaymentDate : deadline24h;
+    const isLatePayment = now > paymentDeadline;
 
     // Verify amount matches participant's share (with tolerance for decimal precision)
     const expectedAmount = parseFloat(participant.amountShare);
@@ -211,7 +189,14 @@ router.post("/create", authenticateToken, async (req, res) => {
 
     // Determine payment type and status
     const paymentType = scheduledDate ? "scheduled" : "instant";
-    const paymentStatus = scheduledDate ? "completed_scheduled" : "completed";
+    let paymentStatus;
+    if (scheduledDate) {
+      paymentStatus = "completed_scheduled";
+    } else if (isLatePayment) {
+      paymentStatus = "completed_late";
+    } else {
+      paymentStatus = "completed";
+    }
     
     // Generate transaction ID
     const transactionId = scheduledDate ? 
@@ -253,8 +238,8 @@ router.post("/create", authenticateToken, async (req, res) => {
         }
       });
 
-      // Update participant status based on payment type
-      const participantStatus = scheduledDate ? "completed_scheduled" : "completed";
+      // Update participant status based on payment type and timing
+      const participantStatus = scheduledDate ? "completed_scheduled" : (isLatePayment ? "completed_late" : "completed");
       await tx.billParticipant.update({
         where: { participantId: participant.participantId },
         data: {
@@ -269,7 +254,7 @@ router.post("/create", authenticateToken, async (req, res) => {
       });
 
       const allPaid = allParticipants.every(p => 
-        p.paymentStatus === "completed" || p.paymentStatus === "completed_scheduled"
+        p.paymentStatus === "completed" || p.paymentStatus === "completed_scheduled" || p.paymentStatus === "completed_late"
       );
 
       if (allPaid) {
@@ -311,7 +296,7 @@ router.post("/create", authenticateToken, async (req, res) => {
           title: scheduledDate ? "Payment Scheduled" : "Payment Completed",
           description: scheduledDate ? 
             `You scheduled payment of Rp ${amount.toLocaleString()} for '${bill.billName}' on ${new Date(scheduledDate).toLocaleDateString()}` :
-            `You paid Rp ${amount.toLocaleString()} for '${bill.billName}'`
+            (isLatePayment ? `You paid Rp ${amount.toLocaleString()} for '${bill.billName}' (late payment)` : `You paid Rp ${amount.toLocaleString()} for '${bill.billName}'`)
         }
       });
 
@@ -324,7 +309,7 @@ router.post("/create", authenticateToken, async (req, res) => {
           title: scheduledDate ? "Scheduled Payment Received" : "Payment Received",
           message: scheduledDate ? 
             `${user.name} scheduled payment of Rp ${amount.toLocaleString()} for '${bill.billName}'` :
-            `${user.name} paid Rp ${amount.toLocaleString()} for '${bill.billName}'`
+            (isLatePayment ? `${user.name} paid Rp ${amount.toLocaleString()} for '${bill.billName}' (late payment)` : `${user.name} paid Rp ${amount.toLocaleString()} for '${bill.billName}'`)
         }
       });
 
@@ -334,7 +319,7 @@ router.post("/create", authenticateToken, async (req, res) => {
     res.json({
       success: true,
       paymentType,
-      message: scheduledDate ? "Payment scheduled successfully!" : "Payment completed successfully!",
+      message: scheduledDate ? "Payment scheduled successfully!" : (isLatePayment ? "Late payment completed successfully!" : "Payment completed successfully!"),
       receipt: {
         paymentId: result.payment.paymentId,
         transactionId,
@@ -429,6 +414,7 @@ router.get("/history", authenticateToken, async (req, res) => {
         scheduledDate: payment.scheduledDate,
         transactionId: payment.transactionId,
         status: payment.status,
+        isLate: payment.status === 'completed_late',
         paidAt: payment.paidAt,
         createdAt: payment.createdAt
       })),

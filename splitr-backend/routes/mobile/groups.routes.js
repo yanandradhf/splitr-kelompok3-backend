@@ -47,6 +47,7 @@ router.get("/", authenticateToken, async (req, res) => {
               select: {
                 userId: true,
                 name: true,
+                profilePhotoUrl: true,
               },
             },
           },
@@ -74,6 +75,7 @@ router.get("/", authenticateToken, async (req, res) => {
         members: group.members.map(member => ({
           userId: member.user.userId,
           name: member.user.name,
+          profilePhotoUrl: member.user.profilePhotoUrl || null,
           isCreator: member.isCreator,
           joinedAt: member.joinedAt,
         })),
@@ -366,6 +368,7 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
                 userId: true,
                 name: true,
                 email: true,
+                profilePhotoUrl: true,
               },
             },
           },
@@ -407,6 +410,7 @@ router.get("/:groupId", authenticateToken, async (req, res) => {
         userId: member.user.userId,
         name: member.user.name,
         email: member.user.email,
+        profilePhotoUrl: member.user.profilePhotoUrl || null,
         isCreator: member.isCreator,
         isCurrentUser: member.user.userId === userId,
         isFriend: friendIds.includes(member.user.userId),

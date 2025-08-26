@@ -102,6 +102,8 @@ router.get("/", authenticateToken, async (req, res) => {
         bniBranchCode: user.bniBranchCode,
         isVerified: user.isVerified,
         defaultPaymentMethod: user.defaultPaymentMethod,
+        profilePhotoUrl: user.profilePhotoUrl || null,
+        emailNotifToogle: user.emailNotifToogle,
         createdAt: user.createdAt,
       },
       stats: {
@@ -291,7 +293,7 @@ router.get("/history", authenticateToken, async (req, res) => {
 
     const where = {
       userId,
-      status: { startsWith: "completed" }, // Show completed and completed_scheduled
+      status: { startsWith: "completed" }, // Show completed, completed_scheduled, and completed_late
       bill: {
         hostId: { not: userId } // Only show payments as participant
       },
@@ -336,6 +338,7 @@ router.get("/history", authenticateToken, async (req, res) => {
         hostName: payment.bill.host.name,
         amount: parseFloat(payment.amount),
         status: payment.status,
+        isLate: payment.status === 'completed_late',
         paymentType: payment.paymentType,
         paidAt: payment.paidAt,
         createdAt: payment.createdAt,
