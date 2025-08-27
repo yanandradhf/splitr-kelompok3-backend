@@ -153,7 +153,7 @@ router.post("/create", authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "You are not a participant in this bill" });
     }
 
-    if (participant.paymentStatus === "completed" || participant.paymentStatus === "paid") {
+    if (participant.paymentStatus.startsWith("completed")) {
       console.log('Payment already completed for participant:', participant.participantId);
       return res.status(400).json({ 
         error: "Payment already completed",
@@ -213,6 +213,7 @@ router.post("/create", authenticateToken, async (req, res) => {
     }, prisma);
 
     if (!paymentResult.success) {
+      console.log('BNI Transfer failed:', paymentResult);
       return res.status(400).json({
         error: "Payment failed",
         message: paymentResult.message,

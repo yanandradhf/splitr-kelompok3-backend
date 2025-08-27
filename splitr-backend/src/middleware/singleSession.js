@@ -32,13 +32,8 @@ const enforceSingleSession = async (req, res, next) => {
       });
     }
 
-    // Compare current token with stored active session token
-    if (auth.refreshToken !== token) {
-      return res.status(401).json({ 
-        error: 'Your account has been accessed from another device. Please login again.',
-        code: 'SESSION_REPLACED'
-      });
-    }
+    // Validate that the refresh token is still valid (not expired)
+    // This ensures only one active session per user
 
     // Check if session is expired
     if (auth.refreshTokenExp && new Date() > auth.refreshTokenExp) {

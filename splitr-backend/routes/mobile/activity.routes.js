@@ -1,7 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
-const { authenticateToken } = require("../../middleware/auth.middleware");
+const { authenticateSecure } = require("../../middleware/auth.middleware");
+
+// Use secure authentication for all activity routes
+const authenticateToken = authenticateSecure;
 
 // const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 

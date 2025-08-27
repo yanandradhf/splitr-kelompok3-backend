@@ -4,21 +4,11 @@ const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 
-// Middleware to verify token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// Import secure authentication middleware
+const { authenticateSecure } = require('../../middleware/auth.middleware');
 
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
-  });
-};
+// Use secure authentication for all bill routes
+const authenticateToken = authenticateSecure;
 
 // 2. Transform Frontend Data (Helper endpoint)
 router.post("/transform-frontend-data", authenticateToken, async (req, res) => {
@@ -3191,12 +3181,26 @@ router.get("/:billId/comments", authenticateToken, async (req, res) => {
     const prisma = req.prisma;
     const userId = req.user.userId;
 
-    // Verify user is participant in this bill
+    // Verify user is participant in this bill OR is the host
+    const bill = await prisma.bill.findUnique({
+      where: { billId },
+      select: { hostId: true }
+    });
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        error: "NOT_FOUND",
+        message: "Bill not found"
+      });
+    }
+
+    const isHost = bill.hostId === userId;
     const userParticipant = await prisma.billParticipant.findFirst({
       where: { billId, userId }
     });
 
-    if (!userParticipant) {
+    if (!userParticipant && !isHost) {
       return res.status(403).json({
         success: false,
         error: "UNAUTHORIZED",
@@ -3268,9 +3272,10 @@ router.post("/:billId/comments", authenticateToken, async (req, res) => {
       });
     }
 
-    // Verify bill exists
+    // Verify bill exists and get host info
     const bill = await prisma.bill.findUnique({
-      where: { billId }
+      where: { billId },
+      select: { billId: true, billName: true, hostId: true }
     });
 
     if (!bill) {
@@ -3281,12 +3286,13 @@ router.post("/:billId/comments", authenticateToken, async (req, res) => {
       });
     }
 
-    // Verify user is participant in this bill
+    // Verify user is participant in this bill OR is the host
+    const isHost = bill.hostId === userId;
     const userParticipant = await prisma.billParticipant.findFirst({
       where: { billId, userId }
     });
 
-    if (!userParticipant) {
+    if (!userParticipant && !isHost) {
       return res.status(403).json({
         success: false,
         error: "UNAUTHORIZED",
@@ -3331,7 +3337,7 @@ router.post("/:billId/comments", authenticateToken, async (req, res) => {
       }
     });
 
-    // Send notifications to other participants
+    // Send notifications to other participants (including host if not the commenter)
     const otherParticipants = await prisma.billParticipant.findMany({
       where: {
         billId,
@@ -3342,11 +3348,26 @@ router.post("/:billId/comments", authenticateToken, async (req, res) => {
       }
     });
 
-    // Create notifications for other participants
-    if (otherParticipants.length > 0) {
+    // If commenter is not host, also notify the host
+    const notificationTargets = [...otherParticipants];
+    if (!isHost) {
+      const hostUser = await prisma.user.findUnique({
+        where: { userId: bill.hostId },
+        select: { userId: true, name: true }
+      });
+      if (hostUser) {
+        notificationTargets.push({
+          userId: hostUser.userId,
+          user: { name: hostUser.name }
+        });
+      }
+    }
+
+    // Create notifications for other participants and host
+    if (notificationTargets.length > 0) {
       await prisma.notification.createMany({
-        data: otherParticipants.map(participant => ({
-          userId: participant.userId,
+        data: notificationTargets.map(target => ({
+          userId: target.userId,
           billId,
           type: "bill_comment",
           title: "New Comment",
