@@ -4,10 +4,15 @@ const multer = require('multer');
 
 // Configure Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'demo',
+  api_key: process.env.CLOUDINARY_API_KEY || 'demo',
+  api_secret: process.env.CLOUDINARY_API_SECRET || 'demo',
 });
+
+// Check if Cloudinary is properly configured
+const isCloudinaryConfigured = process.env.CLOUDINARY_CLOUD_NAME && 
+                              process.env.CLOUDINARY_API_KEY && 
+                              process.env.CLOUDINARY_API_SECRET;
 
 // Profile storage
 const profileStorage = new CloudinaryStorage({

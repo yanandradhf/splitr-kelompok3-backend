@@ -1,30 +1,48 @@
 const express = require("express");
-const jwt = require("jsonwebtoken");
-const { uploadProfile, uploadReceipt } = require('../../services/cloudinary.service');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
+// Import secure authentication middleware
+const { authenticateSecure } = require('../../middleware/auth.middleware');
+const authenticateToken = authenticateSecure;
 
-// Middleware to verify token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, '../../uploads/profiles');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+// Configure multer for local storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
   }
+});
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
-  });
-};
-
-// Cloudinary storage imported from service
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only JPEG, JPG and PNG files are allowed'));
+    }
+  }
+});
 
 // 1. Upload Profile Photo
-router.post("/profile-photo", authenticateToken, uploadProfile.single('photo'), async (req, res) => {
+router.post("/profile-photo", authenticateToken, upload.single('photo'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No photo uploaded' });
@@ -32,7 +50,7 @@ router.post("/profile-photo", authenticateToken, uploadProfile.single('photo'), 
 
     const prisma = req.prisma;
     const userId = req.user.userId;
-    const photoUrl = req.file.path; // Cloudinary URL
+    const photoUrl = `/uploads/profiles/${req.file.filename}`;
 
     // Update user profile with photo URL
     await prisma.user.update({
@@ -52,20 +70,53 @@ router.post("/profile-photo", authenticateToken, uploadProfile.single('photo'), 
   }
 });
 
+// Create receipts directory
+const receiptsDir = path.join(__dirname, '../../uploads/receipts');
+if (!fs.existsSync(receiptsDir)) {
+  fs.mkdirSync(receiptsDir, { recursive: true });
+}
+
+// Configure multer for receipts
+const receiptStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, receiptsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'receipt-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const receiptUpload = multer({ 
+  storage: receiptStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only JPEG, JPG and PNG files are allowed'));
+    }
+  }
+});
+
 // 2. Upload Receipt Image
-router.post("/receipt", authenticateToken, uploadReceipt.single('receipt'), async (req, res) => {
+router.post("/receipt", authenticateToken, receiptUpload.single('receipt'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No receipt uploaded' });
     }
 
-    const receiptUrl = req.file.path; // Cloudinary URL
+    const receiptUrl = `/uploads/receipts/${req.file.filename}`;
     
     res.json({
       success: true,
       message: 'Receipt uploaded successfully',
       receiptUrl: receiptUrl,
-      receiptPath: receiptUrl, // For storing in bill
+      receiptPath: receiptUrl,
       filename: req.file.filename
     });
   } catch (error) {
@@ -74,14 +125,14 @@ router.post("/receipt", authenticateToken, uploadReceipt.single('receipt'), asyn
   }
 });
 
-// 3. Generic Image Upload (for flexibility)
-router.post("/image", authenticateToken, uploadReceipt.single('image'), async (req, res) => {
+// 3. Generic Image Upload
+router.post("/image", authenticateToken, receiptUpload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    const imageUrl = req.file.path; // Cloudinary URL
+    const imageUrl = `/uploads/receipts/${req.file.filename}`;
     
     res.json({
       success: true,

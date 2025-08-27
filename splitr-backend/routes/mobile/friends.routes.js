@@ -5,21 +5,11 @@ const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'splitr_secret_key';
 
-// Middleware to verify token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// Import secure authentication middleware
+const { authenticateSecure } = require('../../middleware/auth.middleware');
 
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
-  });
-};
+// Use secure authentication for all friend routes
+const authenticateToken = authenticateSecure;
 
 // 1. Get Friends List
 router.get("/", authenticateToken, async (req, res) => {
@@ -113,7 +103,7 @@ router.get("/search", authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({ 
+      return res.status(404).json({ 
         error: "User not found",
         message: `No user found with username '${username}'`
       });

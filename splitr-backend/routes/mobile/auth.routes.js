@@ -39,8 +39,10 @@ router.post("/login", async (req, res) => {
     const now = new Date();
     const hasActiveSession = auth.refreshToken && auth.refreshTokenExp && now < auth.refreshTokenExp;
     
-    if (hasActiveSession) {
-      if (!forceLogin) {
+    if (hasActiveSession && !forceLogin) {
+      // Verify if the stored token is still valid
+      try {
+        jwt.verify(auth.refreshToken, JWT_SECRET);
         return res.status(409).json({ 
           error: "Account already logged in on another device",
           code: "ACTIVE_SESSION_EXISTS",
@@ -48,8 +50,13 @@ router.post("/login", async (req, res) => {
           lastLoginAt: auth.lastLoginAt,
           canForceLogin: true
         });
+      } catch (err) {
+        // Stored token is invalid, allow login
+        console.log(`🔒 INVALID SESSION TOKEN: User ${username} has invalid stored token, allowing login`);
       }
-      
+    }
+    
+    if (hasActiveSession && forceLogin) {
       // Force login - log message for security audit
       console.log(`🔒 FORCE LOGIN: User ${username} forced login, previous session terminated`);
     }
@@ -65,7 +72,7 @@ router.post("/login", async (req, res) => {
       data: {
         lastLoginAt: new Date(),
         loginAttempts: 0,
-        refreshToken: refreshToken, // Store actual refresh token
+        refreshToken: refreshToken, // Store refresh token
         refreshTokenExp: refreshTokenExp,
       },
     });
@@ -655,6 +662,7 @@ router.post("/refresh", async (req, res) => {
 
     res.json({
       accessToken: newAccessToken,
+      refreshToken: refreshToken, // Return original refresh token
       expiresIn: 3600, // 1 hour
       tokenType: "Bearer"
     });

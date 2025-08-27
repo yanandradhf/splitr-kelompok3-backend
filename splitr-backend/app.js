@@ -85,6 +85,9 @@ app.use("/api/mobile", (req, res, next) => {
 app.use("/", indexRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/mobile", require("./routes/mobile"));
+
+// Add alias for payment routes (for backward compatibility)
+app.use("/payment", require("./routes/mobile/payment.routes"));
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
