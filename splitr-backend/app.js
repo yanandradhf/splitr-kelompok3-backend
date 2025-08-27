@@ -47,6 +47,7 @@ app.get("/health", async (req, res) => {
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV || "development",
       database: "connected",
+      railway: process.env.RAILWAY_ENVIRONMENT || "local",
       stats: {
         total_users: userCount,
         total_transactions: paymentCount,
@@ -59,7 +60,7 @@ app.get("/health", async (req, res) => {
       status: "ERROR",
       timestamp: new Date().toISOString(),
       database: "disconnected",
-      error: error.message,
+      error: process.env.NODE_ENV === "production" ? "Database connection failed" : error.message,
     });
   }
 });

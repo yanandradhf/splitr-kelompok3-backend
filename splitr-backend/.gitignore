@@ -73,3 +73,9 @@ prisma/migrations/
 # Build outputs
 dist/
 build/
+
+# Railway
+.railway/
+
+# Production secrets
+.env.production.local

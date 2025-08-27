@@ -8,6 +8,7 @@
     "build": "npx prisma generate",
     "postinstall": "npx prisma generate",
     "deploy": "npx prisma db push && npm run db:seed",
+    "railway:deploy": "npx prisma db push && npm run db:seed",
     "db:generate": "npx prisma generate",
     "db:push": "npx prisma db push",
     "db:migrate": "npx prisma migrate dev",
