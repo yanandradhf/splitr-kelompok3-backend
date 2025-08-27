@@ -225,14 +225,14 @@ router.post("/send-otp", async (req, res, next) => {
 
     // const otp = Math.floor(100000 + Math.random() * 900000); 
 
-    // const url = 'https://sandbox.api.mailtrap.io/api/send';
-    // const mailOptions = {
-    //   from: 'splitr@mailtrap.com',
-    //   to: email,
-    //   subject: 'Hello from your app!',
-    //   text: `Your OTP code is ${otpCode}`
-    // };
-    // await emailTransport.sendMail(mailOptions);
+    const url = 'https://sandbox.api.mailtrap.io/api/send';
+    const mailOptions = {
+      from: 'splitr@mailtrap.com',
+      to: email,
+      subject: 'Hello from your app!',
+      text: `Your OTP code is ${otpCode}`
+    };
+    await emailTransport.sendMail(mailOptions);
 
     // Delete existing OTP
     await prisma.otpCode.deleteMany({ where: { email } });
