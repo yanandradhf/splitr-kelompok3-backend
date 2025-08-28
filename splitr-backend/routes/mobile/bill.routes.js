@@ -2123,6 +2123,23 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
         },
       });
 
+      // Only create payment record for host (completed)
+      if (isHost) {
+        await tx.payment.create({
+          data: {
+            billId,
+            userId: targetUser.userId,
+            amount: totalAmount,
+            paymentMethod: "host_advance",
+            paymentType: "instant",
+            status: "completed",
+            transactionId: `HOST_${Date.now()}`,
+            bniReferenceNumber: `HOST_${bill.billCode}`,
+            paidAt: new Date(),
+          },
+        });
+      }
+
       // Create item assignments
       if (items && items.length > 0) {
         await tx.itemAssignment.createMany({

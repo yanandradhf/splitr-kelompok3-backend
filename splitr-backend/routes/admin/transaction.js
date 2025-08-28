@@ -1,6 +1,35 @@
 const express = require("express");
 const router = express.Router();
 
+// Helper functions for status display - sesuai dengan mobile payment status
+function getStatusDisplay(status) {
+  switch (status) {
+    case "completed":
+      return "Completed";
+    case "completed_scheduled":
+      return "Completed (Scheduled)";
+    case "completed_late":
+      return "Completed (Late)";
+    case "failed":
+      return "Failed";
+    default:
+      return "Unknown";
+  }
+}
+
+function getStatusColor(status) {
+  switch (status) {
+    case "completed":
+    case "completed_scheduled":
+    case "completed_late":
+      return "green";
+    case "failed":
+      return "red";
+    default:
+      return "gray";
+  }
+}
+
 // GET /api/admin/transactions - Enhanced Transaction Table with Filters
 router.get("/", async (req, res) => {
   try {
@@ -23,18 +52,19 @@ router.get("/", async (req, res) => {
     // Build where clause
     const where = {};
 
-    // Status filter
-    if (status && status !== "all") { 
-      where.status = status.toLowerCase();
-    }
-
-    // Payment method filter
+    // Payment method filter - sesuaikan dengan mobile logic
     if (payment_method && payment_method !== "all") {
       if (payment_method.toLowerCase() === "instant") {
         where.paymentType = "instant";
       } else if (payment_method.toLowerCase() === "scheduled") {
         where.paymentType = "scheduled";
+        // Scheduled payments are always completed_scheduled, never pending
       }
+    }
+
+    // Status filter - hanya track actual payments
+    if (status && status !== "all") {
+      where.status = status.toLowerCase();
     }
 
     // Date range filter
@@ -151,18 +181,9 @@ router.get("/", async (req, res) => {
       amount: parseFloat(tx.amount),
       amount_formatted: `Rp ${parseInt(tx.amount).toLocaleString("id-ID")}`,
       payment_method: tx.paymentType === "instant" ? "Instant" : "Scheduled",
-      status:
-        tx.status === "completed"
-          ? "Completed"
-          : tx.status === "failed"
-          ? "Failed"
-          : "Pending",
-      status_color:
-        tx.status === "completed"
-          ? "green"
-          : tx.status === "failed"
-          ? "red"
-          : "orange",
+      status: getStatusDisplay(tx.status),
+      status_color: getStatusColor(tx.status),
+      status_detail: tx.status, // Raw status for detailed tracking
       bill_name: tx.bill.billName,
       bill_category: {
         name: tx.bill.category?.categoryName || "Other",
@@ -173,22 +194,25 @@ router.get("/", async (req, res) => {
       bni_reference: tx.bniReferenceNumber,
     }));
 
-    // Calculate summary statistics
+    // Calculate summary statistics - include all completed variants
     const summary = {
       total_transactions: total,
       completed_transactions: transactions.filter(
-        (tx) => tx.status === "completed"
+        (tx) => ["completed", "completed_scheduled", "completed_late"].includes(tx.status)
       ).length,
       failed_transactions: transactions.filter((tx) => tx.status === "failed")
         .length,
-      pending_transactions: transactions.filter((tx) => tx.status === "pending")
+
+      scheduled_transactions: transactions.filter((tx) => tx.status === "completed_scheduled")
+        .length,
+      late_transactions: transactions.filter((tx) => tx.status === "completed_late")
         .length,
       total_amount: transactions.reduce(
         (sum, tx) => sum + parseFloat(tx.amount),
         0
       ),
       completed_amount: transactions
-        .filter((tx) => tx.status === "completed")
+        .filter((tx) => ["completed", "completed_scheduled", "completed_late"].includes(tx.status))
         .reduce((sum, tx) => sum + parseFloat(tx.amount), 0),
     };
 
@@ -301,9 +325,16 @@ router.get("/export", async (req, res) => {
     // Build where clause SAMA PERSIS dengan table query
     const where = {};
 
-    // Status filter
+    // Status filter - sesuaikan dengan mobile payment status
     if (status && status !== "all") {
-      where.status = status.toLowerCase();
+      const statusLower = status.toLowerCase();
+      if (statusLower === "completed") {
+        where.status = {
+          in: ["completed", "completed_scheduled", "completed_late"]
+        };
+      } else {
+        where.status = statusLower;
+      }
     }
 
     // Payment method filter
@@ -445,11 +476,7 @@ router.get("/export", async (req, res) => {
             tx.bill.host.bniAccountNumber,
             `"${parseInt(tx.amount).toLocaleString("id-ID")}"`, // Format rupiah
             tx.paymentType === "instant" ? "Instant" : "Scheduled",
-            tx.status === "completed"
-              ? "Completed"
-              : tx.status === "failed"
-              ? "Failed"
-              : "Pending",
+            getStatusDisplay(tx.status),
             `"${tx.bill.billName}"`,
             `"${tx.bill.category?.categoryName || "Other"}"`,
           ];
@@ -520,18 +547,9 @@ router.get("/export", async (req, res) => {
         amount: parseFloat(tx.amount),
         amount_formatted: `Rp ${parseInt(tx.amount).toLocaleString("id-ID")}`,
         payment_method: tx.paymentType === "instant" ? "Instant" : "Scheduled",
-        status:
-          tx.status === "completed"
-            ? "Completed"
-            : tx.status === "failed"
-            ? "Failed"
-            : "Pending",
-        status_color:
-          tx.status === "completed"
-            ? "green"
-            : tx.status === "failed"
-            ? "red"
-            : "orange",
+        status: getStatusDisplay(tx.status),
+        status_color: getStatusColor(tx.status),
+        status_detail: tx.status,
         bill_name: tx.bill.billName,
         bill_category: {
           name: tx.bill.category?.categoryName || "Other",
@@ -590,7 +608,14 @@ router.get("/export-count", async (req, res) => {
     const where = {};
 
     if (status && status !== "all") {
-      where.status = status.toLowerCase();
+      const statusLower = status.toLowerCase();
+      if (statusLower === "completed") {
+        where.status = {
+          in: ["completed", "completed_scheduled", "completed_late"]
+        };
+      } else {
+        where.status = statusLower;
+      }
     }
 
     if (payment_method && payment_method !== "all") {
@@ -687,9 +712,12 @@ router.get("/stats", async (req, res) => {
           _sum: { amount: true },
         }),
 
-        // Amount statistics
+        // Amount statistics - include all completed variants
         prisma.payment.aggregate({
-          where: { ...where, status: "completed" },
+          where: { 
+            ...where, 
+            status: { in: ["completed", "completed_scheduled", "completed_late"] }
+          },
           _sum: { amount: true },
           _avg: { amount: true },
           _min: { amount: true },
