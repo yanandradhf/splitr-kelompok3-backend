@@ -560,7 +560,7 @@ router.post("/join", authenticateToken, async (req, res) => {
     });
 
     if (!isInvited && !isFriendOfHost) {
-      return res.status(403).json({ 
+      return res.status(400).json({ 
         error: "Access denied", 
         message: "You can only join bills from friends or if you were invited" 
       });
@@ -753,7 +753,7 @@ router.get("/personal/:identifier", authenticateToken, async (req, res) => {
 
     const participant = bill.billParticipants[0];
     if (!participant) {
-      return res.status(403).json({ error: "You are not a participant in this bill" });
+      return res.status(400).json({ error: "You are not a participant in this bill" });
     }
 
     const now = new Date();
@@ -935,7 +935,7 @@ router.get("/from-notification/:identifier", authenticateToken, async (req, res)
 
     const participant = bill.billParticipants[0];
     if (!participant) {
-      return res.status(403).json({ error: "You are not a participant in this bill" });
+      return res.status(400).json({ error: "You are not a participant in this bill" });
     }
 
     const now = new Date();
@@ -1866,7 +1866,7 @@ router.post("/:billId/assign-items", authenticateToken, async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(403).json({ error: "Only bill host can assign items" });
+      return res.status(400).json({ error: "Only bill host can assign items" });
     }
 
     // Delete existing assignments
@@ -1907,7 +1907,7 @@ router.post("/:billId/add-participants", authenticateToken, async (req, res) => 
     });
 
     if (!bill) {
-      return res.status(403).json({ error: "Only bill host can add participants" });
+      return res.status(400).json({ error: "Only bill host can add participants" });
     }
 
     const results = { added: [], failed: [] };
@@ -2042,7 +2042,7 @@ router.post("/:billId/add-participant-by-username", authenticateToken, async (re
     });
 
     if (!bill) {
-      return res.status(403).json({ error: "Only bill host can add participants" });
+      return res.status(400).json({ error: "Only bill host can add participants" });
     }
 
     // Find user by username
@@ -2230,7 +2230,7 @@ router.put("/:billId/participant/:participantId/assign-items", authenticateToken
     }
 
     if (bill.hostId !== userId) {
-      return res.status(403).json({ error: "Only the bill host can re-assign items for this bill" });
+      return res.status(400).json({ error: "Only the bill host can re-assign items for this bill" });
     }
 
     // 2. Verify the participant exists and belongs to this bill.
@@ -2397,7 +2397,7 @@ router.post("/:billId/invite", authenticateToken, async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(403).json({ error: "Only bill host can invite friends" });
+      return res.status(400).json({ error: "Only bill host can invite friends" });
     }
 
     const results = { invited: [], failed: [] };
@@ -2561,7 +2561,7 @@ router.post("/join-by-username", authenticateToken, async (req, res) => {
     });
 
     if (userAuth.username !== username) {
-      return res.status(403).json({ 
+      return res.status(400).json({ 
         error: "Username mismatch", 
         message: "You can only join with your own username" 
       });
@@ -2601,7 +2601,7 @@ router.post("/join-by-username", authenticateToken, async (req, res) => {
     });
 
     if (!isAssigned) {
-      return res.status(403).json({ 
+      return res.status(400).json({ 
         error: "Not assigned to this bill", 
         message: "You must be assigned items in this bill to join" 
       });
@@ -2720,7 +2720,7 @@ router.post("/join-by-id", authenticateToken, async (req, res) => {
     });
 
     if (!isInvited) {
-      return res.status(403).json({ 
+      return res.status(400).json({ 
         error: "Access denied", 
         message: "You must be explicitly invited to join this bill" 
       });
@@ -2973,7 +2973,7 @@ router.put("/:billId", authenticateToken, async (req, res) => {
     }
 
     if (bill.hostId !== userId) {
-      return res.status(403).json({ error: "Only the bill host can update this bill" });
+      return res.status(400).json({ error: "Only the bill host can update this bill" });
     }
     
     // 2. Perform all updates in an atomic transaction to ensure data consistency.
@@ -3075,7 +3075,7 @@ router.delete("/:billId", authenticateToken, async (req, res) => {
     }
 
     if (bill.hostId !== userId) {
-      return res.status(403).json({ error: "Only the bill host can delete this bill" });
+      return res.status(400).json({ error: "Only the bill host can delete this bill" });
     }
 
     // 2. Use a transaction to ensure all related data is deleted atomically.
@@ -3140,7 +3140,7 @@ router.delete("/:billId/participant/:participantId", authenticateToken, async (r
     });
 
     if (!bill) {
-      return res.status(403).json({ error: "Only the bill host can remove participants" });
+      return res.status(400).json({ error: "Only the bill host can remove participants" });
     }
 
     // 2. Find the participant to ensure they exist and belong to the specified bill.
@@ -3218,7 +3218,7 @@ router.get("/:billId/comments", authenticateToken, async (req, res) => {
     });
 
     if (!userParticipant && !isHost) {
-      return res.status(403).json({
+      return res.status(400).json({
         success: false,
         error: "UNAUTHORIZED",
         message: "You are not a participant of this bill"
@@ -3310,7 +3310,7 @@ router.post("/:billId/comments", authenticateToken, async (req, res) => {
     });
 
     if (!userParticipant && !isHost) {
-      return res.status(403).json({
+      return res.status(400).json({
         success: false,
         error: "UNAUTHORIZED",
         message: "You are not a participant of this bill"

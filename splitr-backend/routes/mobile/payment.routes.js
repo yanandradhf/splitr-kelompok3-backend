@@ -36,7 +36,7 @@ router.get("/info/:billId", authenticateToken, async (req, res) => {
 
     const participant = bill.billParticipants[0];
     if (!participant) {
-      return res.status(403).json({ error: "You are not a participant in this bill" });
+      return res.status(400).json({ error: "You are not a participant in this bill" });
     }
 
     // Calculate payment deadline
@@ -126,7 +126,7 @@ router.post("/create", authenticateToken, async (req, res) => {
     const isPinValid = await bcrypt.compare(pin, user.encryptedPinHash);
     if (!isPinValid) {
       console.log('Invalid PIN for user:', userId);
-      return res.status(401).json({ 
+      return res.status(400).json({ 
         error: "Invalid PIN",
         message: "Please check your 6-digit PIN" 
       });
@@ -150,7 +150,7 @@ router.post("/create", authenticateToken, async (req, res) => {
 
     const participant = bill.billParticipants[0];
     if (!participant) {
-      return res.status(403).json({ error: "You are not a participant in this bill" });
+      return res.status(400).json({ error: "You are not a participant in this bill" });
     }
 
     if (participant.paymentStatus.startsWith("completed")) {

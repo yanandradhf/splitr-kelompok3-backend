@@ -18,7 +18,7 @@ const authenticateToken = authenticateSecure;
 //   }
 
 //   jwt.verify(token, JWT_SECRET, (err, user) => {
-//     if (err) return res.status(403).json({ error: 'Invalid token' });
+//     if (err) return res.status(400).json({ error: 'Invalid token' });
 //     req.user = user;
 //     next();
 //   });
