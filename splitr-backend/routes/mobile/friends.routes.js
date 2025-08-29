@@ -153,6 +153,7 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
         userId: true, 
         name: true, 
         email: true,
+        profilePhotoUrl: true,
         auth: {
           select: { username: true }
         }
@@ -204,6 +205,7 @@ router.post("/add-by-username", authenticateToken, async (req, res) => {
         username: friendUser.auth.username,
         name: friendUser.name,
         email: friendUser.email,
+        profilePhotoUrl: friendUser.profilePhotoUrl || null,
       },
     });
   } catch (error) {
@@ -230,7 +232,7 @@ router.post("/add", authenticateToken, async (req, res) => {
     // Check if user exists
     const friendUser = await prisma.user.findUnique({
       where: { userId: friendUserId },
-      select: { userId: true, name: true, email: true },
+      select: { userId: true, name: true, email: true, profilePhotoUrl: true },
     });
 
     if (!friendUser) {
@@ -266,6 +268,7 @@ router.post("/add", authenticateToken, async (req, res) => {
         userId: friendUser.userId,
         name: friendUser.name,
         email: friendUser.email,
+        profilePhotoUrl: friendUser.profilePhotoUrl || null,
       },
     });
   } catch (error) {

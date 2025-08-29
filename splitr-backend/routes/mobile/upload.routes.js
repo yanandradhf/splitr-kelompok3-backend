@@ -8,22 +8,11 @@ const router = express.Router();
 const { authenticateSecure } = require('../../middleware/auth.middleware');
 const authenticateToken = authenticateSecure;
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../../uploads/profiles');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Cloudinary service
+const cloudinary = require('../../services/cloudinary.service');
 
-// Configure multer for local storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Configure multer - memory storage for Cloudinary
+const storage = multer.memoryStorage();
 
 const upload = multer({ 
   storage: storage,
@@ -50,19 +39,28 @@ router.post("/profile-photo", authenticateToken, upload.single('photo'), async (
 
     const prisma = req.prisma;
     const userId = req.user.userId;
-    const photoUrl = `/uploads/profiles/${req.file.filename}`;
 
-    // Update user profile with photo URL
+    // Upload to Cloudinary
+    const result = await cloudinary.uploadBuffer(req.file.buffer, {
+      folder: 'splitr/profiles',
+      public_id: `profile_${userId}_${Date.now()}`,
+      transformation: [
+        { width: 400, height: 400, crop: 'fill' },
+        { quality: 'auto' }
+      ]
+    });
+
+    // Update user profile with Cloudinary URL
     await prisma.user.update({
       where: { userId },
-      data: { profilePhotoUrl: photoUrl }
+      data: { profilePhotoUrl: result.secure_url }
     });
 
     res.json({
       success: true,
       message: 'Profile photo uploaded successfully',
-      photoUrl: photoUrl,
-      filename: req.file.filename
+      photoUrl: result.secure_url,
+      cloudinaryId: result.public_id
     });
   } catch (error) {
     console.error('Upload profile photo error:', error);
@@ -70,25 +68,9 @@ router.post("/profile-photo", authenticateToken, upload.single('photo'), async (
   }
 });
 
-// Create receipts directory
-const receiptsDir = path.join(__dirname, '../../uploads/receipts');
-if (!fs.existsSync(receiptsDir)) {
-  fs.mkdirSync(receiptsDir, { recursive: true });
-}
-
-// Configure multer for receipts
-const receiptStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, receiptsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'receipt-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
+// Configure multer for receipts - memory storage for Cloudinary
 const receiptUpload = multer({ 
-  storage: receiptStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png/;
@@ -110,14 +92,22 @@ router.post("/receipt", authenticateToken, receiptUpload.single('receipt'), asyn
       return res.status(400).json({ error: 'No receipt uploaded' });
     }
 
-    const receiptUrl = `/uploads/receipts/${req.file.filename}`;
+    // Upload to Cloudinary
+    const result = await cloudinary.uploadBuffer(req.file.buffer, {
+      folder: 'splitr/receipts',
+      public_id: `receipt_${Date.now()}`,
+      transformation: [
+        { width: 1000, height: 1000, crop: 'limit' },
+        { quality: 'auto' }
+      ]
+    });
     
     res.json({
       success: true,
       message: 'Receipt uploaded successfully',
-      receiptUrl: receiptUrl,
-      receiptPath: receiptUrl,
-      filename: req.file.filename
+      receiptUrl: result.secure_url,
+      receiptPath: result.secure_url,
+      cloudinaryId: result.public_id
     });
   } catch (error) {
     console.error('Upload receipt error:', error);
@@ -132,14 +122,22 @@ router.post("/image", authenticateToken, receiptUpload.single('image'), async (r
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    const imageUrl = `/uploads/receipts/${req.file.filename}`;
+    // Upload to Cloudinary
+    const result = await cloudinary.uploadBuffer(req.file.buffer, {
+      folder: 'splitr/images',
+      public_id: `image_${Date.now()}`,
+      transformation: [
+        { width: 1000, height: 1000, crop: 'limit' },
+        { quality: 'auto' }
+      ]
+    });
     
     res.json({
       success: true,
       message: 'Image uploaded successfully',
-      imageUrl: imageUrl,
-      imagePath: imageUrl,
-      filename: req.file.filename
+      imageUrl: result.secure_url,
+      imagePath: result.secure_url,
+      cloudinaryId: result.public_id
     });
   } catch (error) {
     console.error('Upload image error:', error);

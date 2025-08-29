@@ -44,8 +44,29 @@ const uploadReceipt = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
+// Helper function to upload buffer directly to Cloudinary
+const uploadBuffer = (buffer, options = {}) => {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream(
+      {
+        resource_type: 'auto',
+        ...options
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    ).end(buffer);
+  });
+};
+
 module.exports = {
   cloudinary,
   uploadProfile,
-  uploadReceipt
+  uploadReceipt,
+  uploadBuffer,
+  isConfigured: isCloudinaryConfigured
 };
