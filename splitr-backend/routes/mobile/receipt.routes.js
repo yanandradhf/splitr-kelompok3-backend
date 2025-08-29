@@ -15,7 +15,7 @@ const authenticateToken = (req, res, next) => {
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) return res.status(400).json({ error: 'Invalid token' });
     req.user = user;
     next();
   });
@@ -74,7 +74,7 @@ router.get("/:billId", authenticateToken, async (req, res) => {
     // Check if user has access to this bill
     const hasAccess = bill.hostId === userId || bill.billParticipants.length > 0;
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(400).json({ error: 'Access denied' });
     }
 
     if (!bill.receiptImageUrl) {
@@ -129,7 +129,7 @@ router.put("/:billId", authenticateToken, uploadReceipt.single('receipt'), async
     });
 
     if (!bill) {
-      return res.status(403).json({ error: 'Only bill host can update receipt' });
+      return res.status(400).json({ error: 'Only bill host can update receipt' });
     }
 
     let receiptUrl = null;

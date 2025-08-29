@@ -35,30 +35,20 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // BANKING SECURITY: Check if user already has active session (not expired)
+    // BANKING SECURITY: Auto-replace existing session (tabrak system)
     const now = new Date();
     const hasActiveSession = auth.refreshToken && auth.refreshTokenExp && now < auth.refreshTokenExp;
     
-    if (hasActiveSession && !forceLogin) {
-      // Verify if the stored token is still valid
+    if (hasActiveSession) {
+      // Check if existing session is valid
       try {
         jwt.verify(auth.refreshToken, JWT_SECRET);
-        return res.status(409).json({ 
-          error: "Account already logged in on another device",
-          code: "ACTIVE_SESSION_EXISTS",
-          message: "For security, only one active session is allowed. Logout from other device or force login.",
-          lastLoginAt: auth.lastLoginAt,
-          canForceLogin: true
-        });
+        // Valid session exists - will be replaced automatically
+        console.log(`🔒 SESSION REPLACEMENT: User ${username} logging in, terminating previous session`);
       } catch (err) {
-        // Stored token is invalid, allow login
-        console.log(`🔒 INVALID SESSION TOKEN: User ${username} has invalid stored token, allowing login`);
+        // Invalid session - clear it
+        console.log(`🔒 INVALID SESSION: User ${username} has corrupted session, clearing`);
       }
-    }
-    
-    if (hasActiveSession && forceLogin) {
-      // Force login - log message for security audit
-      console.log(`🔒 FORCE LOGIN: User ${username} forced login, previous session terminated`);
     }
 
     // Generate ACCESS TOKEN (short-lived) and REFRESH TOKEN (long-lived)
@@ -83,8 +73,9 @@ router.post("/login", async (req, res) => {
       expiresIn: 3600, // 1 hour in seconds
       refreshTokenExp,
       sessionInfo: {
-        isForceLogin: forceLogin,
-        previousSessionTerminated: !!auth.refreshToken
+        sessionReplaced: hasActiveSession,
+        loginTime: new Date(),
+        message: hasActiveSession ? "Previous session terminated" : "New session created"
       },
       user: {
         authId: auth.authId,
@@ -565,7 +556,7 @@ router.post("/verify-pin", authenticateSecureToken, async (req, res) => {
 
     const isValidPin = await bcrypt.compare(pin, user.encryptedPinHash);
     if (!isValidPin) {
-      return res.status(401).json({ error: "Invalid PIN" });
+      return res.status(400).json({ error: "Invalid PIN" });
     }
 
     res.json({ verified: true, message: "PIN verified successfully" });
@@ -601,6 +592,35 @@ router.post("/clear-session", async (req, res) => {
   } catch (error) {
     console.error("Clear session error:", error);
     res.status(500).json({ error: "Failed to clear session" });
+  }
+});
+
+// 7.5.1. Force Clear Session (For Login Page)
+router.post("/force-clear-session", async (req, res) => {
+  try {
+    const { username } = req.body;
+    const prisma = req.prisma;
+
+    if (!username) {
+      return res.status(400).json({ error: "Username required" });
+    }
+
+    // Force clear any existing session
+    const updated = await prisma.userAuth.updateMany({
+      where: { username },
+      data: {
+        refreshToken: null,
+        refreshTokenExp: null,
+      },
+    });
+
+    res.json({ 
+      message: "Session force cleared",
+      cleared: updated.count > 0
+    });
+  } catch (error) {
+    console.error("Force clear session error:", error);
+    res.status(500).json({ error: "Failed to force clear session" });
   }
 });
 
@@ -669,6 +689,74 @@ router.post("/refresh", async (req, res) => {
   } catch (error) {
     console.error("Refresh token error:", error);
     res.status(500).json({ error: "Token refresh failed" });
+  }
+});
+
+// 7.7. Check Session Status
+router.get("/session-status", async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: "No token provided",
+        code: "NO_TOKEN"
+      });
+    }
+
+    // Verify access token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ 
+        valid: false,
+        error: "Invalid or expired token",
+        code: "TOKEN_INVALID"
+      });
+    }
+
+    // Check if session still exists in database
+    const auth = await req.prisma.userAuth.findUnique({
+      where: { authId: decoded.authId },
+      select: { 
+        refreshToken: true, 
+        refreshTokenExp: true,
+        lastLoginAt: true
+      }
+    });
+
+    if (!auth || !auth.refreshToken) {
+      return res.status(401).json({ 
+        valid: false,
+        error: "Session not found or expired",
+        code: "SESSION_NOT_FOUND"
+      });
+    }
+
+    // Check if refresh token expired
+    if (auth.refreshTokenExp && new Date() > auth.refreshTokenExp) {
+      return res.status(401).json({ 
+        valid: false,
+        error: "Session expired",
+        code: "SESSION_EXPIRED"
+      });
+    }
+
+    res.json({ 
+      valid: true,
+      lastLoginAt: auth.lastLoginAt,
+      expiresAt: auth.refreshTokenExp
+    });
+
+  } catch (error) {
+    console.error("Session status error:", error);
+    res.status(500).json({ 
+      valid: false,
+      error: "Failed to check session status" 
+    });
   }
 });
 

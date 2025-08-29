@@ -186,7 +186,7 @@ router.post("/:groupId/members", authenticateToken, async (req, res) => {
     });
 
     if (!group) {
-      return res.status(403).json({ error: "Only group creator can add members" });
+      return res.status(400).json({ error: "Only group creator can add members" });
     }
 
     // Check if user is already a member
@@ -272,7 +272,7 @@ router.delete("/:groupId/members/:userId", authenticateToken, async (req, res) =
     });
 
     if (!group) {
-      return res.status(403).json({ error: "Only the group creator can remove members" });
+      return res.status(400).json({ error: "Only the group creator can remove members" });
     }
 
     // Check if the member to be deleted actually exists in the group
@@ -443,7 +443,7 @@ router.patch("/edit/:groupId", authenticateToken, async (req, res) => {
     }
 
     if (existingGroup.creatorId !== userId) {
-      return res.status(403).json({ error: "Only the group creator can edit this group" });
+      return res.status(400).json({ error: "Only the group creator can edit this group" });
     }
 
     const updateData = {};
@@ -527,7 +527,7 @@ router.post("/:groupId/add-friend/:memberId", authenticateToken, async (req, res
     });
 
     if (!membership) {
-      return res.status(403).json({ error: "You are not a member of this group" });
+      return res.status(400).json({ error: "You are not a member of this group" });
     }
 
     // Verify target user is also in the group
@@ -675,7 +675,7 @@ router.delete("/delete/:groupId", authenticateToken, async (req, res) => {
 
     if (groupToDelete.creatorId !== userId) {
 
-      return res.status(403).json({ error: "Only the group creator can delete this group" });
+      return res.status(400).json({ error: "Only the group creator can delete this group" });
     }
 
     // Get group info and members for notifications
